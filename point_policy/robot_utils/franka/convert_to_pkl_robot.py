@@ -72,7 +72,7 @@ if save_img_size is None:
         int(original_img_size[0] * (crop_w[1] - crop_w[0])),
         int(original_img_size[1] * (crop_h[1] - crop_h[0])),
     )
-
+import ipdb; ipdb.set_trace()
 assert len(task_names) == len(object_coords_names)
 
 
