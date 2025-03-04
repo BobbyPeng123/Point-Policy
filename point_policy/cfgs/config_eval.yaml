@@ -6,8 +6,8 @@ defaults:
   - override hydra/launcher: submitit_local
 
 # Dir
-root_dir: /path/to/dir
-data_dir: /path/to/expert_demos
+root_dir: /home/bobby/Point-Policy
+data_dir: /home/bobby/data/expert_demos
 
 # misc
 seed: 2

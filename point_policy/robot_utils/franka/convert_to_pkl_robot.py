@@ -95,6 +95,8 @@ if process_points:
         ]
         cfg["object_labels"] = object_labels
 
+        # import ipdb; ipdb.set_trace()
+
     points_class = PointsClass(**cfg)
 
 
@@ -426,11 +428,13 @@ for TASK_NAME in task_names:
             """
             Triangulate 3D points from 2D points when gt_depth is not available
             """
+            # import ipdb; ipdb.set_trace()
             for cam_idx in camera_indices:
                 camera_name = f"cam_{cam_idx}"
                 pixel_key = camera2pixelkey[camera_name]
                 observation[f"object_tracks_3d_{pixel_key}"] = []
                 observation[f"robot_tracks_3d_{pixel_key}"] = []
+            # import ipdb; ipdb.set_trace()
             for t_idx in range(
                 len(observation[f"object_tracks_{pixel_key}"])
             ):  # for each frame

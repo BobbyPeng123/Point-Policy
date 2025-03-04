@@ -29,7 +29,7 @@ class PointsClass:
         dift_steps,
         num_points,
         object_labels,
-        use_gt_depth=True,
+        use_gt_depth=False,
         **kwargs,
     ):
         """
@@ -102,6 +102,7 @@ class PointsClass:
 
         self.initial_coords, self.expert_correspondence_features = {}, {}
         for pixel_key in self.pixel_keys:
+            # import ipdb; ipdb.set_trace()
             expert_image = Image.open(
                 "%s/coordinates/%s/images/%s.png" % (root_dir, task_name, pixel_key)
             ).convert("RGB")
@@ -127,7 +128,7 @@ class PointsClass:
 
         # Set up the depth model
         if use_gt_depth:
-            self.depth_model = Depth("/path/to/Depth-Anything-V2/", device)
+            self.depth_model = Depth("/home/bobby/Point-Policy/Depth-Anything-V2/", device)
 
         # Set up cotracker
         sys.path.append(root_dir + "/co-tracker/")
