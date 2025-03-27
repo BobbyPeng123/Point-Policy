@@ -1,12 +1,12 @@
-git submodule update --init --recursive
+# git submodule update --init --recursive
 
 cd co-tracker
 git checkout main
 pip install -e .
 pip install matplotlib flow_vis tqdm tensorboard imageio[ffmpeg]
-mkdir -p checkpoints
+# mkdir -p checkpoints
 cd checkpoints
-wget https://huggingface.co/facebook/cotracker3/resolve/main/scaled_online.pth
+# wget https://huggingface.co/facebook/cotracker3/resolve/main/scaled_online.pth
 cd ../../
 
 cd dift

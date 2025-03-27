@@ -48,7 +48,7 @@ class BCDataset(IterableDataset):
         assert self._point_dim in [2, 3], "Point dimension must be 2 or 3"
         self._robot_points_key = (
             "robot_tracks" if self._point_dim == 2 else "robot_tracks_3d"
-        )
+        ) if not gt_depth else ("gt_robot_tracks" if self._point_dim == 2 else "gt_robot_tracks_3d")
         self._object_points_key = (
             "object_tracks" if self._point_dim == 2 else "object_tracks_3d"
         )

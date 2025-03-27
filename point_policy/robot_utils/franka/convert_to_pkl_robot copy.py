@@ -28,12 +28,6 @@ import base64
 from PIL import Image
 from pathlib import Path
 
-def serialize_image(image):
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    image_bytes = buffer.getvalue()
-    return base64.b64encode(image_bytes).decode('utf-8')
-
 # Create the parser
 parser = argparse.ArgumentParser(
     description="Convert processed robot data into a pkl file"
@@ -60,8 +54,6 @@ task_names = args.task_names
 NUM_DEMOS = args.num_demos
 process_points = args.process_points
 use_gt_depth = args.use_gt_depth
-
-# import ipdb; ipdb.set_trace()
 
 camera_indices = [1, 2]
 original_img_size = (640, 480)
@@ -112,7 +104,6 @@ if process_points:
         # import ipdb; ipdb.set_trace()
 
     points_class = PointsClass(**cfg)
-
 
 
 def extract_number(s):
@@ -308,51 +299,12 @@ for TASK_NAME in task_names:
                 camera_name = f"cam_{cam_idx}"
                 pixel_key = camera2pixelkey[camera_name]
 
-                # start server
-                import time
-                # wait for 10 seconds
-                time.sleep(10)
-                context = zmq.Context()
-                socket = context.socket(zmq.REQ)
-                socket.connect("tcp://172.24.71.224:6000")
-
                 frames = observation[pixel_key]
                 # CV2 reads in BGR format, so we need to convert to RGB
                 frames = [frame[..., ::-1] for frame in frames]
-
-                # send image to server
-                frame = frames[0]
-                # image = Image.fromarray(frame[..., ::-1])  # CV2 reads in BGR format
-                image = Image.fromarray(frame)  # CV2 reads in BGR format
-                serialized_image = serialize_image(image)
-
-                # get bbox of object
+                points_class.add_to_image_list(frames[0], pixel_key)
                 for object_label in object_labels:
-                    request = {
-                        "image": serialized_image,
-                        "image_path": "",
-                        "query": f"Get the bounding box of the {object_label} in the image",
-                    }
-                    socket.send_json(request)
-                    response = socket.recv_json()
-                    bbox = response["result"]
-                    bbox = bbox[:-1] if len(bbox) == 5 else bbox
-                    # make sure bbox is a list of int
-                    bbox = [int(x) for x in bbox]
-                    print(f"bbox: {bbox}")
-                    print(f"bbox type: {type(bbox)}")
-
-                    points_class.add_to_image_list(frames[0], pixel_key)
-                    points_class.find_semantic_similar_points(
-                        pixel_key, object_label, bbox
-                    )
-                    print(f"points_class.semantic_similar_points: {points_class.semantic_similar_points}")
-
-
-
-                # points_class.add_to_image_list(frames[0], pixel_key)
-                # for object_label in object_labels:
-                #     points_class.find_semantic_similar_points(pixel_key, object_label)
+                    points_class.find_semantic_similar_points(pixel_key, object_label)
                 try:
                     points_class.track_points(
                         pixel_key, last_n_frames=mark_every, is_first_step=True
@@ -385,7 +337,7 @@ for TASK_NAME in task_names:
                         )
                     else:
                         points_class.get_depth()
-                        # import ipdb; ipdb.set_trace()
+                        import ipdb; ipdb.set_trace()
                     points_with_depth = points_class.get_points(pixel_key)
                     depths = points_with_depth[:, :, -1]
 
@@ -425,13 +377,6 @@ for TASK_NAME in task_names:
                         points = points_class.get_points_on_image(
                             pixel_key, last_n_frames=mark_every
                         )
-
-                        # # plot image
-                        # points_class.plot_image(
-                        # pixel_key,
-                        # )
-
-
                         for j in range(mark_every - to_add):
                             points_list.append(points[j])
 

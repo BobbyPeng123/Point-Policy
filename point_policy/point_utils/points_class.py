@@ -127,8 +127,9 @@ class PointsClass:
                         )
 
         # Set up the depth model
+        # import ipdb; ipdb.set_trace()
         if use_gt_depth:
-            self.depth_model = Depth("/home/bobby/Point-Policy/Depth-Anything-V2/", device)
+            self.depth_model = Depth("/home/bobby/Point-Policy/Depth-Anything-V2", device)
 
         # Set up cotracker
         sys.path.append(root_dir + "/co-tracker/")
@@ -221,7 +222,7 @@ class PointsClass:
         self.tracks = {pixel_key: None for pixel_key in self.pixel_keys}
         self.hand_tracks = {pixel_key: None for pixel_key in self.pixel_keys}
 
-    def find_semantic_similar_points(self, pixel_key, object_label=""):
+    def find_semantic_similar_points(self, pixel_key, object_label="", object_bbox = None):
         """
         Find the semantic similar points between the expert image and the current image.
         """
@@ -238,6 +239,7 @@ class PointsClass:
             self.initial_coords[key],
             pixel_key,
             object_label,
+            object_bbox,
         )
 
     def get_depth(self, pixel_key, last_n_frames=1):
@@ -529,6 +531,7 @@ class PointsClass:
 
             fig, ax = plt.subplots(1)
             ax.imshow(curr_image.astype(np.uint8))
+            ax.axis("off")  # Hide the axes before saving and displaying
 
             rainbow = plt.get_cmap("rainbow")
             # Generate n evenly spaced colors from the colormap
@@ -546,10 +549,30 @@ class PointsClass:
                         edgecolor="black",
                     )
                 )
+
             fig.canvas.draw()
-            img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-            img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
+            # Get buffer and size
+            buffer, (width, height) = fig.canvas.print_to_buffer()
+            img = np.frombuffer(buffer, dtype=np.uint8)
+
+            # Handle potential RGBA buffer (4 channels) by converting to RGB
+            expected_size = width * height * 4  # 4 channels per pixel (RGBA)
+            if img.size == expected_size:
+                img = img.reshape((height, width, 4))[:, :, :3]  # Drop alpha channel
+            else:
+                img = img.reshape((height, width, 3))  # If already RGB
+
             img_list.append(img.copy())
+
+            # Save image for debugging
+            import time
+            plt.savefig(
+                f"/home/bobby/Point-Policy/point_policy/debug_image/{pixel_key}_{time.time()}.png",
+                bbox_inches="tight",
+                pad_inches=0,
+            )
+
             plt.close()
 
         return img_list

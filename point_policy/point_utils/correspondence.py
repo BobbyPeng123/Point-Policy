@@ -90,7 +90,7 @@ class Correspondence:
         return expert_img_features
 
     def find_correspondence(
-        self, expert_img_features, current_image, coords, pixel_key, object_label
+        self, expert_img_features, current_image, coords, pixel_key, object_label, object_bbox
     ):
         """
         Find the corresponding points between the expert image and the current image
@@ -108,6 +108,10 @@ class Correspondence:
         """
 
         with torch.no_grad():
+            if object_bbox is not None:
+                current_image = current_image[
+                    :, object_bbox[1] : object_bbox[3], object_bbox[0] : object_bbox[2]
+                ]
             curr_image_shape = (current_image.shape[2], current_image.shape[1])
             current_image = transforms.Resize((self.height, self.width))(current_image)
             current_image_features = self.dift.forward(
@@ -150,5 +154,9 @@ class Correspondence:
                 out_coords[idx, 1], out_coords[idx, 2] = int(
                     max_yx[1] * curr_image_shape[0] / self.width
                 ), int(max_yx[0] * curr_image_shape[1] / self.height)
+
+            if object_bbox is not None:
+                out_coords[:, 1] += object_bbox[0]
+                out_coords[:, 2] += object_bbox[1]
 
             return out_coords

@@ -7,6 +7,3 @@
 [submodule "Franka-Teach"]
 	path = Franka-Teach
 	url = git@github.com:NYU-robot-learning/Franka-Teach.git
-[submodule "Depth-Anything-V2"]
-	path = Depth-Anything-V2
-	url = https://github.com/DepthAnything/Depth-Anything-V2

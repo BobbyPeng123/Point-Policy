@@ -54,7 +54,7 @@ class FrankaEnv(gym.Env):
         )
 
         if self.use_robot:
-            self.cam_ids = [1, 2]
+            self.cam_ids = [1,2] ####################################################
             self.image_subscribers = {}
             if self.use_gt_depth:
                 self.depth_subscribers = {}
@@ -159,6 +159,7 @@ class FrankaEnv(gym.Env):
     def reset(self):
         if self.use_robot:
             print("resetting")
+            # import ipdb; ipdb.set_trace()
             franka_action = FrankaAction(
                 pos=np.zeros(3),
                 quat=np.zeros(4),

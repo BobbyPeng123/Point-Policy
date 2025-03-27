@@ -55,7 +55,6 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         """
         Actions are always absolute actions
         """
-
         self._env = env
         self._task_name = task_name
         self._object_labels = object_labels
@@ -69,20 +68,30 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         self._use_gt_depth = use_gt_depth
         self._point_dim = point_dim
 
-        # track vars
+        # flags for tracking
         self._use_robot_points = use_robot_points
         self._num_robot_points = num_robot_points
         self._use_object_points = use_object_points
         self._num_object_points = num_object_points
 
-        if self.use_robot and self._use_object_points:
-            # init points class if using object points
-            from point_utils.points_class import PointsClass
+        # --- Modified: create two separate PointsClass instances ---
+        from point_utils.points_class import PointsClass
 
-            points_cfg["task_name"] = task_name
-            points_cfg["pixel_keys"] = self._pixel_keys
-            points_cfg["object_labels"] = object_labels
-            self._points_class = PointsClass(**points_cfg)
+        points_cfg["task_name"] = task_name
+        points_cfg["pixel_keys"] = self._pixel_keys
+
+        object_cfg = points_cfg.copy()
+        object_cfg["object_labels"] = self._object_labels  # use provided semantic labels
+        object_cfg["num_points"] = num_object_points
+
+        robot_cfg = points_cfg.copy()
+        robot_cfg["object_labels"] = ["robot"]
+        robot_cfg["num_points"] = num_robot_points
+
+        self._points_class_obj = PointsClass(**object_cfg)
+        self._points_class_robot = PointsClass(**robot_cfg)
+        # import ipdb; ipdb.set_trace()
+        # --- End modifications ---
 
         # calibration data
         assert calib_path is not None
@@ -102,12 +111,10 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 low=0, high=255, shape=pixels.shape, dtype=pixels.dtype
             )
 
-            # Action spec
             action_spec = self._env.action_space
             self._action_spec = specs.Array(
                 shape=action_spec.shape, dtype=action_spec.dtype, name="action"
             )
-            # Observation spec
             robot_state = obs["features"]
             self._obs_spec = {}
             for pixel_key in self._pixel_keys:
@@ -131,13 +138,11 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 low=0, high=255, shape=pixels.shape, dtype=pixels.dtype
             )
 
-            # Action spec
             action_spec = self._env.action_space
             self._action_spec = specs.Array(
                 shape=action_spec.shape, dtype=action_spec.dtype, name="action"
             )
 
-            # Observation spec
             self._obs_spec = {}
             for pixel_key in self._pixel_keys:
                 self._obs_spec[pixel_key] = specs.BoundedArray(
@@ -178,15 +183,14 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
         observation = {}
 
-        # point tracker init
-        robot_points, robot_points_3d = self.get_pixel_on_robot()
-        self.init_track_points(obs, robot_points, robot_points_3d)
-
         for pixel_key in self._pixel_keys:
             observation[pixel_key] = obs[pixel_key]
 
+        # --- Modified init_track_points ---
+        self.init_track_points(obs)
+        # --- End modification ---
+
         if self._point_dim == 2:
-            # pixels and point tracks
             for pixel_key in self._pixel_keys:
                 observation[f"point_tracks_{pixel_key}"] = self._track_pts[pixel_key]
         elif self._point_dim == 3:
@@ -197,8 +201,8 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                     P.append(self.camera_projections[camera_name])
                     pt2d = self._track_pts[pixel_key]
                     pts.append(pt2d)
-
                 pts3d = triangulate_points(P, pts)[:, :3]
+                robot_points, robot_points_3d = self.get_pixel_on_robot()
                 pts3d[: self._num_robot_points] = robot_points_3d
                 for pixel_key in self._pixel_keys:
                     observation[f"point_tracks_{pixel_key}"] = np.array(pts3d)
@@ -208,12 +212,11 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                     pt2d = self._track_pts[pixel_key]
                     depth_key = f"depth{pixel_key[-1]}"
                     depth = obs[depth_key]
-                    # compute depth for each points
                     depths = []
                     for pt in pt2d:
                         x, y = pt.astype(int)
                         depths.append(depth[y, x])
-                    depths = np.array(depths) / 1000.0  # convert to meters
+                    depths = np.array(depths) / 1000.0
                     extr = self.calibration_data[camera_name]["ext"]
                     intr = self.calibration_data[camera_name]["int"]
                     pt3d = pixel2d_to_3d(pt2d, depths, intr, extr)
@@ -236,8 +239,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             gripper = self.prev_gripper_state
         self.prev_gripper_state = gripper
 
-        # convert action to quarternion before sending
-        # Incoming action is in the rotation 6D format.
+        # convert action to quaternion before sending
         pos, rot = action[:3], action[3:9]
         rot = rotation_6d_to_matrix(rot)
         rot = R.from_matrix(rot).as_quat()
@@ -252,26 +254,30 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         for pixel_key in self._pixel_keys:
             observation[pixel_key] = obs[pixel_key]
 
-        # robot points
-        robot_points, robot_points_3d = self.get_pixel_on_robot()
-        self.prev_gripper_points = robot_points_3d
+        # --- Modified: update both robot and object points via separate P3PO instances ---
+        # robot_points, robot_points_3d = self.get_pixel_on_robot()
+        # self.prev_gripper_points = robot_points_3d
         for pixel_key in self._pixel_keys:
-            current_track = robot_points[pixel_key]
+            # Update robot points using the robot tracking instance.
+            self._points_class_robot.add_to_image_list(obs[pixel_key][:, :, ::-1], pixel_key)
+            self._points_class_robot.track_points(pixel_key)
+            robot_pts = self._points_class_robot.get_points_on_image(pixel_key).numpy()[0]
+            self._points_class_robot.plot_image(pixel_key=pixel_key)
+            current_track = robot_pts
 
             if self._use_object_points:
-                self._points_class.add_to_image_list(
-                    obs[pixel_key][:, :, ::-1], pixel_key
-                )
-                self._points_class.track_points(pixel_key)
-                object_pts = self._points_class.get_points_on_image(pixel_key).numpy()[
-                    0
-                ]
-                current_track = np.concatenate([current_track, object_pts], axis=0)
+                self._points_class_obj.add_to_image_list(obs[pixel_key][:, :, ::-1], pixel_key)
+                for label in self._object_labels:
+                    self._points_class_obj.find_semantic_similar_points(pixel_key, label)
+                self._points_class_obj.track_points(pixel_key)
+                object_pts = self._points_class_obj.get_points_on_image(pixel_key).numpy()[0]
+                current_track = np.concatenate([robot_pts, object_pts], axis=0)
+                self._points_class_obj.plot_image(pixel_key=pixel_key)
 
             self._track_pts[pixel_key] = current_track
             observation[f"point_tracks_{pixel_key}"] = current_track
+        # --- End modifications ---
 
-        # Get 3d points from 3D depth or 2D triangulation
         if self._point_dim == 3:
             if not self._use_gt_depth:
                 P, pts = [], []
@@ -280,8 +286,8 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                     P.append(self.camera_projections[camera_name])
                     pt2d = self._track_pts[pixel_key]
                     pts.append(pt2d)
-
                 pts3d = triangulate_points(P, pts)[:, :3]
+                robot_points, robot_points_3d = self.get_pixel_on_robot()
                 pts3d[: self._num_robot_points] = robot_points_3d
                 for pixel_key in self._pixel_keys:
                     observation[f"point_tracks_{pixel_key}"] = np.array(pts3d)
@@ -291,12 +297,11 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                     pt2d = self._track_pts[pixel_key]
                     depth_key = f"depth{pixel_key[-1]}"
                     depth = obs[depth_key]
-                    # compute depth for each points
                     depths = []
                     for pt in pt2d:
                         x, y = pt.astype(int)
                         depths.append(depth[y, x])
-                    depths = np.array(depths) / 1000.0  # convert to meters
+                    depths = np.array(depths) / 1000.0
                     extr = self.calibration_data[camera_name]["ext"]
                     intr = self.calibration_data[camera_name]["int"]
                     pt3d = pixel2d_to_3d(pt2d, depths, intr, extr)
@@ -307,7 +312,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
         if self._step >= self._max_episode_len:
             done = True
-        done = done | observation["goal_achieved"]
+        done = done or observation["goal_achieved"]
 
         self.observation = observation
 
@@ -323,9 +328,9 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         return cv2.resize(self._env.render("rgb_array"), (width, height))
 
     def get_pixel_on_robot(self):
-        # get current gripper pose in robot base frame
+        # Get current gripper pose in robot base frame.
         pos = self._current_pose[:3]
-        ori = self._current_pose[3:7]  # in quat
+        ori = self._current_pose[3:7]  # in quaternion
         T_g_b = np.eye(4)
         T_g_b[:3, :3] = R.from_quat(ori).as_matrix()
         T_g_b[:3, 3] = pos
@@ -341,18 +346,14 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 Tp = Tp.copy()
                 Tp[1, 3] = 0.015 if idx == 0 else -0.015
             pt = T_g_b @ Tp
-            pt = pt[:3, 3]
             points3d.append(pt[:3])
         points3d = np.array(points3d)
 
         pixel_poses = {}
         for pixel_key in self._pixel_keys:
             if pixel_key == "pixels51":
-                # ignore egocentric camera
                 continue
-
             camera_name = pixelkey2camera[pixel_key]
-
             P = self.calibration_data[camera_name]["ext"]
             K = self.calibration_data[camera_name]["int"]
             D = self.calibration_data[camera_name]["dist_coeff"]
@@ -366,34 +367,31 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
         return pixel_poses, points3d
 
-    def init_track_points(self, obs, robot_points, robot_points_3d):
-        self.prev_gripper_points = robot_points_3d
-
+    def init_track_points(self, obs):
         self._track_pts = {}
         for pixel_key in self._pixel_keys:
             points = []
-
-            robot_pts = torch.tensor(
-                robot_points[pixel_key], device=self._device
-            ).float()[None]
-            if self._use_robot_points:
-                points.append(robot_pts)
-            else:
-                points[0][:, -len(robot_pts[0]) :] = robot_pts
-
+            # Process robot points via p3po using the robot tracking instance.
+            self._points_class_robot.reset_episode()
+            frame = obs[pixel_key]
+            self._points_class_robot.add_to_image_list(frame[:, :, ::-1], pixel_key)
+            self._points_class_robot.find_semantic_similar_points(pixel_key, "robot")
+            self._points_class_robot.track_points(pixel_key, is_first_step=True)
+            self._points_class_robot.track_points(pixel_key)
+            robot_pts = self._points_class_robot.get_points_on_image(pixel_key)
+            self._points_class_robot.plot_image(pixel_key=pixel_key)
+            points.append(robot_pts)
+            # Process object points if enabled.
             if self._use_object_points:
-                frame = obs[pixel_key]
-                self._points_class.reset_episode()
-                self._points_class.add_to_image_list(frame[:, :, ::-1], pixel_key)
-                for object_label in self._object_labels:
-                    self._points_class.find_semantic_similar_points(
-                        pixel_key, object_label
-                    )
-                self._points_class.track_points(pixel_key, is_first_step=True)
-                self._points_class.track_points(pixel_key)
-                object_pts = self._points_class.get_points_on_image(pixel_key)
+                self._points_class_obj.reset_episode()
+                self._points_class_obj.add_to_image_list(frame[:, :, ::-1], pixel_key)
+                for label in self._object_labels:
+                    self._points_class_obj.find_semantic_similar_points(pixel_key, label)
+                self._points_class_obj.track_points(pixel_key, is_first_step=True)
+                self._points_class_obj.track_points(pixel_key)
+                object_pts = self._points_class_obj.get_points_on_image(pixel_key)
+                # self._points_class_obj.plot_image(pixel_key=pixel_key)
                 points.append(object_pts)
-
             self._track_pts[pixel_key] = torch.cat(points, dim=1)[0].numpy()
 
     def __getattr__(self, name):
@@ -435,7 +433,6 @@ class ActionDTypeWrapper(dm_env.Environment):
         self._env = env
         self._discount = 1.0
 
-        # Action spec
         wrapped_action_spec = env.action_spec()
         self._action_spec = specs.Array(
             shape=wrapped_action_spec.shape, dtype=dtype, name="action"

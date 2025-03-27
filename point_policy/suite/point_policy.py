@@ -20,6 +20,18 @@ from robot_utils.franka.utils import (
 from robot_utils.franka.gripper_points import extrapoints, Tshift
 from robot_utils.franka.utils import pixelkey2camera
 
+import zmq
+import io
+import base64
+from PIL import Image
+from pathlib import Path
+
+def serialize_image(image):
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    image_bytes = buffer.getvalue()
+    return base64.b64encode(image_bytes).decode('utf-8')
+
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 
 
@@ -89,7 +101,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             extrinsic = self.calibration_data[camera_name]["ext"]
             self.camera_projections[camera_name] = intrinsic @ extrinsic
 
-        obs = self._env.reset()
+        obs = self._env.reset() # maybe change here to control whether reset atthe begining
         if self.use_robot:
             pixels = obs[self._pixel_keys[0]]
             self.observation_space = spaces.Box(
@@ -365,18 +377,43 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             else:
                 points[0][:, -len(robot_pts[0]) :] = robot_pts
 
+            # modify to use server to get object points
             if self._use_object_points:
+                #start server
+                context = zmq.Context()
+                socket = context.socket(zmq.REQ)
+                socket.connect("tcp://172.24.71.224:6000")
+
                 frame = obs[pixel_key]
+                image = Image.fromarray(frame[..., ::-1])
+                serialized_image = serialize_image(image)
+
                 self._points_class.reset_episode()
                 self._points_class.add_to_image_list(frame[:, :, ::-1], pixel_key)
                 for object_label in self._object_labels:
+                    request = {
+                        "image": serialized_image,
+                        "image_path": "",
+                        "query": f"Get the bounding box of the {object_label} in the image",
+                    }
+                    socket.send_json(request)
+                    response = socket.recv_json()
+                    bbox = response["result"]
+                    bbox = bbox[:-1] if len(bbox) == 5 else bbox
+                    # make sure bbox is a list of int
+                    bbox = [int(x) for x in bbox]
+                    print(f"bbox: {bbox}")
+                    print(f"bbox type: {type(bbox)}")
                     self._points_class.find_semantic_similar_points(
-                        pixel_key, object_label
+                        pixel_key, object_label, bbox
                     )
+                    print(f'points: {self._points_class.semantic_similar_points}')
                 self._points_class.track_points(pixel_key, is_first_step=True)
                 self._points_class.track_points(pixel_key)
                 object_pts = self._points_class.get_points_on_image(pixel_key)
                 points.append(object_pts)
+                # plot
+                self._points_class.plot_image(pixel_key)
 
             self._track_pts[pixel_key] = torch.cat(points, dim=1)[0].numpy()
 
