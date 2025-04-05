@@ -60,10 +60,12 @@ task_names = args.task_names
 NUM_DEMOS = args.num_demos
 process_points = args.process_points
 use_gt_depth = args.use_gt_depth
+use_depth_anything = True
 
 # import ipdb; ipdb.set_trace()
 
-camera_indices = [1, 2]
+# camera_indices = [1, 2]
+camera_indices = [2]
 original_img_size = (640, 480)
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 save_img_size = (256, 256)
@@ -191,7 +193,7 @@ for TASK_NAME in task_names:
             observation[f"pixels{idx}"] = np.array(frames)
 
         # Process depth
-        if use_gt_depth:
+        if not use_depth_anything and use_gt_depth:
             depth_dir = data_point / "depth"
             if not depth_dir.exists():
                 print(f"Data point {data_point} is incomplete (no depth)")
@@ -203,6 +205,7 @@ for TASK_NAME in task_names:
                 with open(depth_file, "rb") as f:
                     depth = pkl.load(f)  # depth in meters
                 depth_frames[idx] = depth
+
 
         state_csv_path = data_point / "states.csv"
         state = read_csv(state_csv_path)
@@ -311,7 +314,7 @@ for TASK_NAME in task_names:
                 # start server
                 import time
                 # wait for 10 seconds
-                time.sleep(10)
+                time.sleep(5)
                 context = zmq.Context()
                 socket = context.socket(zmq.REQ)
                 socket.connect("tcp://172.24.71.224:6000")
@@ -374,7 +377,8 @@ for TASK_NAME in task_names:
 
                 if use_gt_depth:
                     points_3d_list = []
-                    if use_gt_depth:
+                    # if use_gt_depth:
+                    if not use_depth_anything:
                         depth = depth_frames[cam_idx][0]
                         points_class.set_depth(
                             depth,
@@ -384,7 +388,7 @@ for TASK_NAME in task_names:
                             (crop_h, crop_w),
                         )
                     else:
-                        points_class.get_depth()
+                        points_class.get_depth(pixel_key, save_img_size, save_img_size, (crop_h, crop_w), last_n_frames=mark_every)
                         # import ipdb; ipdb.set_trace()
                     points_with_depth = points_class.get_points(pixel_key)
                     depths = points_with_depth[:, :, -1]
@@ -397,8 +401,10 @@ for TASK_NAME in task_names:
                 for idx, image in enumerate(frames[1:]):
                     print(f"Traj: {i}, Frame: {idx}, Image: {pixel_key}")
                     points_class.add_to_image_list(image, pixel_key)
+                    print("added")
 
-                    if use_gt_depth:
+                    # if use_gt_depth:
+                    if not use_depth_anything:
                         depth = depth_frames[cam_idx][idx]
                         points_class.set_depth(
                             depth,
@@ -407,6 +413,17 @@ for TASK_NAME in task_names:
                             save_img_size,
                             (crop_h, crop_w),
                         )
+                        print("set depth")
+                    else:
+                        # get depth from the previous frame
+                        points_class.get_depth(
+                            pixel_key,
+                            save_img_size,
+                            save_img_size,
+                            (crop_h, crop_w),
+                            last_n_frames=mark_every
+                        )
+                        print("got depth")
 
                     if (idx + 1) % mark_every == 0 or idx == (len(frames) - 2):
                         to_add = mark_every - (idx + 1) % mark_every
@@ -422,23 +439,25 @@ for TASK_NAME in task_names:
                             one_frame=(mark_every == 1),
                         )
 
+                        print("tracked points")
+
                         points = points_class.get_points_on_image(
                             pixel_key, last_n_frames=mark_every
                         )
 
                         # # plot image
-                        # points_class.plot_image(
-                        # pixel_key,
-                        # )
+                        points_class.plot_image(
+                        pixel_key,
+                        )
 
 
                         for j in range(mark_every - to_add):
                             points_list.append(points[j])
 
                         if use_gt_depth:
-                            if not use_gt_depth:
-                                points_class.get_depth(last_n_frames=mark_every)
-                                import ipdb; ipdb.set_trace()
+                            # if not use_gt_depth:
+                            #     points_class.get_depth(last_n_frames=mark_every)
+                            #     # import ipdb; ipdb.set_trace()
 
                             points_with_depth = points_class.get_points(
                                 pixel_key, last_n_frames=mark_every

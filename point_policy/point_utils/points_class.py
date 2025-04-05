@@ -128,8 +128,9 @@ class PointsClass:
 
         # Set up the depth model
         # import ipdb; ipdb.set_trace()
-        if use_gt_depth:
-            self.depth_model = Depth("/home/bobby/Point-Policy/Depth-Anything-V2", device)
+        # if use_gt_depth:
+        #     self.depth_model = Depth("/home/bobby/Point-Policy/Depth-Anything-V2", device)
+        self.depth_model = Depth("/home/bobby/Point-Policy/Depth-Anything-V2", device)
 
         # Set up cotracker
         sys.path.append(root_dir + "/co-tracker/")
@@ -242,7 +243,7 @@ class PointsClass:
             object_bbox,
         )
 
-    def get_depth(self, pixel_key, last_n_frames=1):
+    def get_depth(self, pixel_key, original_image_size=None, current_image_size=None, crop_ratios=None, last_n_frames=1):
         """
         Get the depth map for the current image using Depth Anything. Depth is height x width.
 
@@ -251,7 +252,11 @@ class PointsClass:
         last_n_frames : int
             The number of frames to look back in the episode
         """
+        # import ipdb; ipdb.set_trace()
         key = f"{pixel_key}"
+        self.original_image_size = original_image_size
+        self.current_image_size = current_image_size
+        self.crop_ratios = crop_ratios
 
         self.depth[key] = np.zeros(
             (
@@ -465,7 +470,7 @@ class PointsClass:
                     point_w_orig = int(
                         (point_w / w_curr) * w_orig_cropped + w_orig * crop_w[0]
                     )
-
+                    # import ipdb; ipdb.set_trace()
                     depth = self.depth[pixel_key][frame_idx, point_h_orig, point_w_orig]
 
                 x = self.tracks[pixel_key][0, frame_idx, point][0]

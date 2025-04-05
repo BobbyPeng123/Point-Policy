@@ -11,6 +11,9 @@ img_size: [640, 480] # (width, height)
 use_robot_points: true
 num_robot_points: 9
 gt_depth: True
+# gt_depth: False
+# use_depth_anything: False
+use_depth_anything: True
 
 # action compute
 point_dim: 3 # 2 or 3
@@ -65,4 +68,5 @@ task_make_fn:
   num_object_points: ${suite.num_object_points}
   points_cfg: ??? # to be specified later
   use_gt_depth: ${suite.gt_depth}
+  use_depth_anything: ${suite.use_depth_anything}
   point_dim: ${suite.point_dim}

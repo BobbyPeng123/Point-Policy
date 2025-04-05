@@ -36,8 +36,8 @@ def main():
             task_name, des_object = user_input.split(',')[0].strip(), user_input.split(',')[1].strip()
 
             # Manually map tasks to model paths
-            if task_name == '0302_pick_bottle':
-                model_path = '/home/bobby/Point-Policy/point_policy/exp_local/2025.03.04/point_policy/deterministic/015859_hidden_dim_256/snapshot/50000.pt'
+            if task_name == 'pick_bottle_to_basket':
+                model_path = '/home/bobby/Point-Policy/point_policy/exp_local/2025.03.24/point_policy/deterministic/044109_hidden_dim_256/snapshot/50000.pt'
             else:
                 print(f"Unknown task name: {task_name}")
                 continue

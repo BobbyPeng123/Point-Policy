@@ -61,7 +61,6 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         num_object_points=8,
         points_cfg=None,
         use_gt_depth=False,
-        use_depth_anything=False,   # NEW parameter for Depth Anything mode
         point_dim=2,
     ):
         self._env = env
@@ -75,13 +74,6 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         self._device = "cpu"
         self._use_gt_depth = use_gt_depth
         self._point_dim = point_dim
-        self._use_depth_anything = use_depth_anything  # store the new flag
-
-        # If using Depth Anything, instantiate the depth model.
-        if self._use_depth_anything:
-            from point_utils.depth import Depth
-            self._depth_model = Depth("/home/bobby/Point-Policy/Depth-Anything-V2", 'cuda')
-            
 
         # track vars
         self._use_robot_points = use_robot_points
@@ -109,7 +101,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             extrinsic = self.calibration_data[camera_name]["ext"]
             self.camera_projections[camera_name] = intrinsic @ extrinsic
 
-        obs = self._env.reset()  # maybe change here to control whether reset at the beginning
+        obs = self._env.reset() # maybe change here to control whether reset atthe begining
         if self.use_robot:
             pixels = obs[self._pixel_keys[0]]
             self.observation_space = spaces.Box(
@@ -220,18 +212,13 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             for pixel_key in self._pixel_keys:
                 camera_name = pixelkey2camera[pixel_key]
                 pt2d = self._track_pts[pixel_key]
-                # Use Depth Anything if enabled; otherwise, use the provided depth map.
-                if self._use_depth_anything:
-                    import ipdb; ipdb.set_trace()
-                    depth_map = self._depth_model.get_depth(obs[pixel_key])
-                else:
-                    depth_key = f"depth{pixel_key[-1]}"
-                    depth_map = obs[depth_key]
-                # Compute depth for each point
+                depth_key = f"depth{pixel_key[-1]}"
+                depth = obs[depth_key]
+                # compute depth for each points
                 depths = []
                 for pt in pt2d:
                     x, y = pt.astype(int)
-                    depths.append(depth_map[y, x])
+                    depths.append(depth[y, x])
                 depths = np.array(depths) / 1000.0  # convert to meters
                 extr = self.calibration_data[camera_name]["ext"]
                 intr = self.calibration_data[camera_name]["int"]
@@ -268,7 +255,9 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                     obs[pixel_key][:, :, ::-1], pixel_key
                 )
                 self._points_class.track_points(pixel_key)
-                object_pts = self._points_class.get_points_on_image(pixel_key).numpy()[0]
+                object_pts = self._points_class.get_points_on_image(pixel_key).numpy()[
+                    0
+                ]
                 current_track = np.concatenate([current_track, object_pts], axis=0)
 
             self._track_pts[pixel_key] = current_track
@@ -292,15 +281,13 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 for pixel_key in self._pixel_keys:
                     camera_name = pixelkey2camera[pixel_key]
                     pt2d = self._track_pts[pixel_key]
-                    if self._use_depth_anything:
-                        depth_map = self._depth_model.get_depth(obs[pixel_key])
-                    else:
-                        depth_key = f"depth{pixel_key[-1]}"
-                        depth_map = obs[depth_key]
+                    depth_key = f"depth{pixel_key[-1]}"
+                    depth = obs[depth_key]
+                    # compute depth for each points
                     depths = []
                     for pt in pt2d:
                         x, y = pt.astype(int)
-                        depths.append(depth_map[y, x])
+                        depths.append(depth[y, x])
                     depths = np.array(depths) / 1000.0  # convert to meters
                     extr = self.calibration_data[camera_name]["ext"]
                     intr = self.calibration_data[camera_name]["int"]
@@ -392,7 +379,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
             # modify to use server to get object points
             if self._use_object_points:
-                # start server
+                #start server
                 context = zmq.Context()
                 socket = context.socket(zmq.REQ)
                 socket.connect("tcp://172.24.71.224:6000")
@@ -670,7 +657,6 @@ def make(
     num_object_points,
     points_cfg,
     use_gt_depth,
-    use_depth_anything,  # NEW parameter passed through make()
     point_dim,
 ):
     env = gym.make(
@@ -699,7 +685,6 @@ def make(
         num_object_points=num_object_points,
         points_cfg=points_cfg,
         use_gt_depth=use_gt_depth,
-        use_depth_anything=use_depth_anything,  # pass new flag to wrapper
         point_dim=point_dim,
     )
     env = ActionDTypeWrapper(env, np.float32)

@@ -47,6 +47,7 @@ class Depth:
             torch.load(
                 f"{depth_path}/checkpoints/depth_anything_v2_metric_{dataset}_{encoder}.pth",
                 map_location="cpu",
+                # map_location=device,
                 weights_only=False,
             )
         )
@@ -69,5 +70,14 @@ class Depth:
             The depth map for the image.
         """
         bgr_array = image[:, :, ::-1]
+        # import ipdb; ipdb.set_trace()
+        # # check whether model and image are on the same device
+        # if torch.cuda.is_available():
+        #     bgr_array = torch.from_numpy(bgr_array).to(self.device)
+        # else:
+        #     bgr_array = torch.from_numpy(bgr_array).cpu()
+        
+        # # print out the device of the image and model
+        # print(f"Image device: {bgr_array.device}, Model device: {self.depth.device}")
         depth = self.depth.infer_image(bgr_array)
         return depth
