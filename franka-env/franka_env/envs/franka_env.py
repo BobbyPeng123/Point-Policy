@@ -26,6 +26,7 @@ class FrankaEnv(gym.Env):
         use_gt_depth=False,
         crop_h=None,
         crop_w=None,
+        # control_port=None,
     ):
         super(FrankaEnv, self).__init__()
         self.width = width
@@ -74,7 +75,7 @@ class FrankaEnv(gym.Env):
                         topic_type="Depth",
                     )
 
-            self.action_request_socket = create_request_socket(HOST, CONTROL_PORT)
+            # self.action_request_socket = create_request_socket(HOST, CONTROL_PORT) if control_port is None else create_request_socket(HOST, control_port)
 
     def get_state(self):
         self.action_request_socket.send(b"get_state")
