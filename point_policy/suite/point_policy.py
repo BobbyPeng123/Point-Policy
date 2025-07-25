@@ -63,6 +63,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         use_gt_depth=False,
         use_depth_anything=False,   # NEW parameter for Depth Anything mode
         point_dim=2,
+        reset_flag = True
     ):
         self._env = env
         self._task_name = task_name
@@ -76,6 +77,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         self._use_gt_depth = use_gt_depth
         self._point_dim = point_dim
         self._use_depth_anything = use_depth_anything  # store the new flag
+        self.reset_flag = reset_flag
 
         # If using Depth Anything, instantiate the depth model.
         if self._use_depth_anything:
@@ -90,6 +92,10 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         self._num_object_points = num_object_points
 
         if self.use_robot and self._use_object_points:
+            if points_cfg is None:
+                raise ValueError(
+                    "points_cfg must be provided when use_object_points=True"
+                )
             # init points class if using object points
             from point_utils.points_class import PointsClass
 
@@ -100,6 +106,8 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
         # calibration data
         assert calib_path is not None
+        # print(calib_path)
+        # exit()
         self.calibration_data = np.load(calib_path, allow_pickle=True).item()
         self._camera_names = list(self.calibration_data.keys())
         self.camera_projections = {}
@@ -109,7 +117,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             extrinsic = self.calibration_data[camera_name]["ext"]
             self.camera_projections[camera_name] = intrinsic @ extrinsic
 
-        obs = self._env.reset()  # maybe change here to control whether reset at the beginning
+        obs = self._env.reset(reset_flag=self.reset_flag)  # maybe change here to control whether reset at the beginning
         if self.use_robot:
             pixels = obs[self._pixel_keys[0]]
             self.observation_space = spaces.Box(
@@ -356,6 +364,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 continue
 
             camera_name = pixelkey2camera[pixel_key]
+            # import ipdb; ipdb.set_trace()
 
             P = self.calibration_data[camera_name]["ext"]
             K = self.calibration_data[camera_name]["int"]
@@ -395,7 +404,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 # start server
                 context = zmq.Context()
                 socket = context.socket(zmq.REQ)
-                socket.connect("tcp://172.24.71.224:6000")
+                socket.connect("tcp://100.96.11.47:6000")
 
                 frame = obs[pixel_key]
                 image = Image.fromarray(frame[..., ::-1])
@@ -672,6 +681,7 @@ def make(
     use_gt_depth,
     use_depth_anything,  # NEW parameter passed through make()
     point_dim,
+    reset_flag=True
 ):
     env = gym.make(
         "Franka-v1",
@@ -701,6 +711,7 @@ def make(
         use_gt_depth=use_gt_depth,
         use_depth_anything=use_depth_anything,  # pass new flag to wrapper
         point_dim=point_dim,
+        reset_flag=reset_flag
     )
     env = ActionDTypeWrapper(env, np.float32)
     env = ActionRepeatWrapper(env, action_repeat)

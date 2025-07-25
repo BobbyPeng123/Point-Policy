@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+
+task_name: place_bottle_left_robot
+object_labels: [bottle]
+num_object_points: 5

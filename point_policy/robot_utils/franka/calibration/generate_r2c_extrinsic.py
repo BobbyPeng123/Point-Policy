@@ -10,11 +10,11 @@ import pickle as pkl
 from pathlib import Path
 from scipy.spatial.transform import Rotation as R
 
-PATH_DATA_PKL = Path("/path/to/data/processed_data_pkl/calib.pkl")
+PATH_DATA_PKL = Path("/home/bobby/data/processed_data_pkl/calib_right.pkl")
 PATH_INTRINSICS = None
 SAVE_DIR = Path("../../../calib")
 PATH_SAVE_CALIB = SAVE_DIR / "calib.npy"
-CAM_IDS = [1, 2]
+CAM_IDS = [4, 6]
 R2C_TRAJ_IDX = 0
 FRAME_FREQ = 1  # consider every Nth frame
 
@@ -87,7 +87,10 @@ for cam_id in CAM_IDS:
     image_points = []
     invalid_indices = []
     idx = 0
+    count = 0
     for i in range(0, len(pixels), FRAME_FREQ):
+        print(i)
+        print(count)
         corners, ids, rejectedImgPoints = detector.detectMarkers(pixels[i])
         if corners:
             center_img = corners[0].mean(axis=1).flatten()
@@ -95,6 +98,7 @@ for cam_id in CAM_IDS:
         else:
             invalid_indices.append(idx)
             print("error")
+            count += 1
         idx += 1
 
     # remove invalid indices from subsampled object points

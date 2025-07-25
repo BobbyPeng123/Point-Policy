@@ -1,0 +1,7 @@
+defaults:
+  - _self_
+
+task_name: 0302_place_bottle
+# object_labels: [bottle, basket]
+object_labels: [bottle]
+num_object_points: 2

@@ -97,6 +97,7 @@ class BCDataset(IterableDataset):
 
                 # Repeat last dimension of each observation for history_len times
                 for key in observations[i].keys():
+                    # import ipdb; ipdb.set_trace()
                     observations[i][key] = np.concatenate(
                         [
                             observations[i][key],

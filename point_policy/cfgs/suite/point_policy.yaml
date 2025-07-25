@@ -10,10 +10,10 @@ name: "franka_env"
 img_size: [640, 480] # (width, height)
 use_robot_points: true
 num_robot_points: 9
-gt_depth: True
-# gt_depth: False
-# use_depth_anything: False
-use_depth_anything: True
+# gt_depth: True
+gt_depth: False
+use_depth_anything: False
+# use_depth_anything: True
 
 # action compute
 point_dim: 3 # 2 or 3
@@ -43,7 +43,8 @@ action_after_steps: 1
 
 # obs_keys
 # pixel_keys: ["pixels1", "pixels2"]
-pixel_keys: ["pixels2"]
+# pixel_keys: ["pixels2", "pixels5"] #######################
+pixel_keys: ["pixels4", "pixels6"]
 proprio_key: "proprioceptive"
 feature_key: "features"
 
@@ -59,7 +60,7 @@ task_make_fn:
   width: ${suite.img_size[0]}
   max_episode_len: ??? # to be specified later
   max_state_dim: ??? # to be specified later
-  calib_path: ${root_dir}/calib/calib.npy
+  calib_path: ${root_dir}/calib/calib_25_right_robot.npy
   eval: ${eval} # eval true mean use robot
   pixel_keys: ${suite.pixel_keys}
   use_robot_points: ${suite.use_robot_points}
@@ -70,3 +71,4 @@ task_make_fn:
   use_gt_depth: ${suite.gt_depth}
   use_depth_anything: ${suite.use_depth_anything}
   point_dim: ${suite.point_dim}
+  reset_flag: True

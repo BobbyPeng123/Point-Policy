@@ -4,7 +4,6 @@ import pickle
 from PIL import Image
 import torch
 from torchvision import transforms
-
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
@@ -34,54 +33,25 @@ class PointsClass:
     ):
         """
         Initialize the Points Class for finding key points in the episode.
-
-        Parameters:
-        -----------
-        root_dir : str
-            The root directory for the github repository.
-
-        task_name : str
-            The name of the task done by the robot.
-
-        device : str
-            The device to use for computation, either 'cpu' or 'cuda' (for GPU acceleration).
-
-        width : int
-            The width that should be used in the correspondence model.
-
-        height : int
-            The height that should be used in the correspondence model.
-
-        image_size_multiplier : int
-            The size multiplier for the image in the correspondence model.
-
-        ensemble_size : int
-            The size of the ensemble for the DIFT model.
-
-        dift_layer : int
-            The specific layer of the DIFT model to use for feature extraction.
-
-        dift_steps : int
-            The number of steps or iterations for feature extraction in the DIFT model.
+        [documentation omitted for brevity]
         """
 
         self.pixel_keys = pixel_keys
         self.device = device
         self.object_labels = object_labels
+        # import ipdb; ipdb.set_trace()
 
         self.tracks = {pixel_key: None for pixel_key in self.pixel_keys}
         if "human_hand" in self.object_labels:
             # Do hand tracking with MediaPipe
             import mediapipe as mp
 
-            # Initialize MediaPipe Hands
             mp_hands = mp.solutions.hands
             self.hands = mp_hands.Hands(
                 static_image_mode=True, max_num_hands=1, min_detection_confidence=0.5
             )
             self.hand_tracks = {pixel_key: None for pixel_key in self.pixel_keys}
-
-            # remove "human_hand" from object_labels
+            # Remove "human_hand" from object_labels so it is not processed further
             self.object_labels.remove("human_hand")
             self.detect_hand = True
             self.num_hand_points = 9  # wrist + index finger + thumb
@@ -101,42 +71,59 @@ class PointsClass:
         )
 
         self.initial_coords, self.expert_correspondence_features = {}, {}
+
         for pixel_key in self.pixel_keys:
-            # import ipdb; ipdb.set_trace()
-            expert_image = Image.open(
-                "%s/coordinates/%s/images/%s.png" % (root_dir, task_name, pixel_key)
-            ).convert("RGB")
+            # If the only object label is "empty_space", create a blank expert image.
+            if self.object_labels == ["empty_space"] or len(self.object_labels) == 0:
+                expert_image = Image.new("RGB", (224, 224), (0, 0, 0))  # black blank image
+            else:
+                expert_image = Image.open(
+                    "%s/coordinates/%s/images/%s.png" % (root_dir, task_name, pixel_key)
+                ).convert("RGB")
 
             if len(self.object_labels) > 0:
                 for object_label in self.object_labels:
                     key = f"{pixel_key}_{object_label}"
-                    self.initial_coords[key] = np.array(
-                        pickle.load(
-                            open(
-                                "%s/coordinates/%s/coords/%s_%s.pkl"
-                                % (root_dir, task_name, pixel_key, object_label),
-                                "rb",
+                    if object_label == "empty_space":
+                        # Skip loading coordinates and computing expert features.
+                        # The semantic_similar_points for empty_space will be set externally.
+                        self.initial_coords[key] = np.array([
+                            [0.0, 0.0, 0.0],
+                            [0.0, 0.0, 0.0],
+                        ])
+                        continue
+                    else:
+                        self.initial_coords[key] = np.array(
+                            pickle.load(
+                                open(
+                                    "%s/coordinates/%s/coords/%s_%s.pkl"
+                                    % (root_dir, task_name, pixel_key, object_label),
+                                    "rb",
+                                )
                             )
                         )
-                    )
-                    with torch.no_grad():
-                        self.expert_correspondence_features[
-                            key
-                        ] = self.correspondence_model.set_expert_correspondence(
-                            expert_image, pixel_key, object_label
-                        )
+                        # import ipdb; ipdb.set_trace()
+                        with torch.no_grad():
+                            self.expert_correspondence_features[key] = \
+                                self.correspondence_model.set_expert_correspondence(
+                                    expert_image, pixel_key, object_label
+                                )
+
+        # Initialize semantic similar points for every (pixel_key, object_label) combination.
+        # For 'empty_space', this remains None (or can be set externally later).
+        self.semantic_similar_points = {
+            f"{pixel_key}_{object_label}": None
+            for pixel_key in self.pixel_keys
+            for object_label in self.object_labels
+        }
 
         # Set up the depth model
-        # import ipdb; ipdb.set_trace()
-        # if use_gt_depth:
-        #     self.depth_model = Depth("/home/bobby/Point-Policy/Depth-Anything-V2", device)
         self.depth_model = Depth("/home/bobby/Point-Policy/Depth-Anything-V2", device)
 
         # Set up cotracker
         sys.path.append(root_dir + "/co-tracker/")
         from cotracker.predictor import CoTrackerOnlinePredictor
 
-        # self.cotracker = CoTrackerOnlinePredictor(checkpoint=root_dir + "/co-tracker/checkpoints/scaled_online.pth", window_len=16).to(device)
         self.cotracker = {}
         for pixel_key in self.pixel_keys:
             self.cotracker[pixel_key] = CoTrackerOnlinePredictor(
@@ -153,18 +140,14 @@ class PointsClass:
             f"{pixel_key}": torch.tensor([]).to(self.device)
             for pixel_key in self.pixel_keys
         }
-        self.semantic_similar_points = {
-            f"{pixel_key}_{object_label}": None
-            for pixel_key in self.pixel_keys
-            for object_label in self.object_labels
-        }
+        
 
         if num_points == -1:
             self.num_points = 0 if not self.detect_hand else self.num_hand_points
             if len(self.object_labels) > 0:
                 for object_label in self.object_labels:
                     key = f"{self.pixel_keys[0]}_{object_label}"
-                    self.num_points += self.initial_coords[key].shape[0]
+                    self.num_points += self.initial_coords.get(key, np.array([])).shape[0]
         else:
             self.num_points = num_points
 
@@ -175,7 +158,7 @@ class PointsClass:
         self.current_image_size = None
         self.crop_ratios = None
 
-    # Image passed in here must be in RGB format
+ # Image passed in here must be in RGB format
     def add_to_image_list(self, image, pixel_key):
         """
         Add an image to the image list for finding key points.
@@ -223,18 +206,24 @@ class PointsClass:
         self.tracks = {pixel_key: None for pixel_key in self.pixel_keys}
         self.hand_tracks = {pixel_key: None for pixel_key in self.pixel_keys}
 
-    def find_semantic_similar_points(self, pixel_key, object_label="", object_bbox = None):
+    def find_semantic_similar_points(self, pixel_key, object_label="", object_bbox=None):
         """
         Find the semantic similar points between the expert image and the current image.
         """
-
+        # Skip processing for 'human_hand' and 'empty_space'
+        # import ipdb; ipdb.set_trace()
         if object_label == "human_hand":
+            return
+        if object_label == "empty_space":
+            # resized_coords = self.semantic_similar_points[key].clone()
+            # resized_coords[:, 1] *= self.width / self.original_size[0]   # x scale
+            # resized_coords[:, 2] *= self.height / self.original_size[1]  # y scale
+
+            # self.semantic_similar_points[key] = resized_coords
             return
 
         key = f"{pixel_key}_{object_label}"
-        self.semantic_similar_points[
-            key
-        ] = self.correspondence_model.find_correspondence(
+        self.semantic_similar_points[key] = self.correspondence_model.find_correspondence(
             self.expert_correspondence_features[key],
             self.image_list[pixel_key][0, -1],
             self.initial_coords[key],
@@ -341,13 +330,16 @@ class PointsClass:
                     )
 
         if len(self.object_labels) > 0:
+            # import ipdb; ipdb.set_trace()
             if is_first_step:
                 semantic_similar_points = []
+                # import ipdb; ipdb.set_trace()
                 for object_label in self.object_labels:
                     semantic_similar_points.append(
                         self.semantic_similar_points[f"{pixel_key}_{object_label}"]
                     )
                 semantic_similar_points = torch.cat(semantic_similar_points, dim=0)
+                # import ipdb; ipdb.set_trace()
 
                 self.cotracker[pixel_key](
                     video_chunk=self.image_list[pixel_key][0, 0]
@@ -508,6 +500,7 @@ class PointsClass:
         return final_points
 
     def plot_image(self, pixel_key, last_n_frames=1):
+        # import ipdb; ipdb.set_trace()
         """
         Plot the image with the key points overlaid on top of it. Running this will slow down your tracking, but it's good for debugging.
 

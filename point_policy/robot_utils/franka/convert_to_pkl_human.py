@@ -46,13 +46,13 @@ NUM_DEMOS = args.num_demos
 process_points = args.process_points
 use_gt_depth = args.use_gt_depth
 
-camera_indices = [1, 2]
+camera_indices = [4, 6]
 original_img_size = (640, 480)
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 save_img_size = None
 object_labels = [
-    "human_hand",
-    "objects",
+    # "human_hand",
+    # "objects",
 ]
 
 PROCESSED_DATA_PATH = Path(DATA_DIR) / "processed_data"
@@ -72,7 +72,7 @@ if task_names is None:
 SAVE_DATA_PATH.mkdir(parents=True, exist_ok=True)
 
 # Calibration data
-calibration_data = np.load(CALIB_PATH, allow_pickle=True).item()
+# calibration_data = np.load(CALIB_PATH, allow_pickle=True).item()
 
 episode_list = {}
 for cam_idx in camera_indices:

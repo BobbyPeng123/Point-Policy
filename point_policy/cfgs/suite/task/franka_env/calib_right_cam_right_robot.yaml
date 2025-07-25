@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+
+task_name: calib_right_cam_right_robot
+object_labels: []
+num_object_points: 0

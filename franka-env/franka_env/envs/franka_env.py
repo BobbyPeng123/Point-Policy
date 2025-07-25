@@ -7,6 +7,7 @@ import pickle
 from frankateach.constants import (
     CAM_PORT,
     GRIPPER_OPEN,
+    GRIPPER_CLOSE,
     HOST,
     CONTROL_PORT,
 )
@@ -39,6 +40,7 @@ class FrankaEnv(gym.Env):
         self.action_dim = 7  # (pos, axis angle, gripper)
 
         self.use_robot = use_robot
+        print(self.use_robot, "0000000000000000000000000000000000000000000000000000000000000000000000000")
         self.use_gt_depth = use_gt_depth
 
         self.n_channels = 3
@@ -55,7 +57,8 @@ class FrankaEnv(gym.Env):
         )
 
         if self.use_robot:
-            self.cam_ids = [1,2] ####################################################
+            # self.cam_ids = [2,4,5,6] ####################################################
+            self.cam_ids = [4,6]
             self.image_subscribers = {}
             if self.use_gt_depth:
                 self.depth_subscribers = {}
@@ -76,6 +79,7 @@ class FrankaEnv(gym.Env):
                     )
 
             # self.action_request_socket = create_request_socket(HOST, CONTROL_PORT) if control_port is None else create_request_socket(HOST, control_port)
+            self.action_request_socket = create_request_socket(HOST, CONTROL_PORT)
 
     def get_state(self):
         self.action_request_socket.send(b"get_state")
@@ -157,24 +161,35 @@ class FrankaEnv(gym.Env):
 
         return obs, self.reward, False, None
 
-    def reset(self):
+    def reset(self, reset_flag=False):
+        # import ipdb; ipdb.set_trace()
         if self.use_robot:
-            print("resetting")
-            # import ipdb; ipdb.set_trace()
-            franka_action = FrankaAction(
-                pos=np.zeros(3),
-                quat=np.zeros(4),
-                gripper=GRIPPER_OPEN,
-                reset=True,
-                timestamp=time.time(),
-            )
+            if reset_flag:
+                print("resetting")
+                # import ipdb; ipdb.set_trace()
+                franka_action = FrankaAction(
+                    pos=np.zeros(3),
+                    quat=np.zeros(4),
+                    gripper=GRIPPER_OPEN,
+                    # gripper=GRIPPER_CLOSE,
+                    reset=True,
+                    timestamp=time.time(),
+                )
 
-            self.action_request_socket.send(
-                bytes(pickle.dumps(franka_action, protocol=-1))
-            )
-            franka_state: FrankaState = pickle.loads(self.action_request_socket.recv())
-            self.franka_state = franka_state
-            print("reset done: ", franka_state)
+
+                self.action_request_socket.send(
+                    bytes(pickle.dumps(franka_action, protocol=-1))
+                )
+                franka_state: FrankaState = pickle.loads(self.action_request_socket.recv())
+                self.franka_state = franka_state
+                print("reset done: ", franka_state)
+            else:
+                print("not resetting")
+                self.action_request_socket.send(b"get_state")
+                franka_state: FrankaState = pickle.loads(self.action_request_socket.recv())
+                self.franka_state = franka_state
+                print("current state: ", self.franka_state)
+
 
             image_list = {}
             for cam_idx, subscriber in self.image_subscribers.items():
@@ -189,6 +204,7 @@ class FrankaEnv(gym.Env):
                     ]
 
                 image_list[cam_idx] = image
+            print("image gotten")
 
             if self.use_gt_depth:
                 depth_list = {}

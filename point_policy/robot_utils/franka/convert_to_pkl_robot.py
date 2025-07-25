@@ -47,10 +47,10 @@ parser.add_argument(
     "--num_demos", type=int, default=None, help="Number of demonstrations to process"
 )
 parser.add_argument(
-    "--process_points", type=bool, default=False, help="Process human hand points"
+    "--process_points", type=bool, default=True, help="Process human hand points"
 )
 parser.add_argument(
-    "--use_gt_depth", type=bool, default=True, help="Use ground truth depth"
+    "--use_gt_depth", type=bool, default=False, help="Use ground truth depth"
 )
 
 args = parser.parse_args()
@@ -60,12 +60,12 @@ task_names = args.task_names
 NUM_DEMOS = args.num_demos
 process_points = args.process_points
 use_gt_depth = args.use_gt_depth
-use_depth_anything = True
+use_depth_anything = False
 
 # import ipdb; ipdb.set_trace()
 
 # camera_indices = [1, 2]
-camera_indices = [2]
+camera_indices = [4, 6]
 original_img_size = (640, 480)
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 save_img_size = (256, 256)
@@ -114,6 +114,7 @@ if process_points:
         # import ipdb; ipdb.set_trace()
 
     points_class = PointsClass(**cfg)
+    # import ipdb; ipdb.set_trace()
 
 
 
@@ -169,6 +170,7 @@ for TASK_NAME in task_names:
 
         for save_idx, idx in enumerate(camera_indices):
             video_path = image_dir / f"camera{idx}.mp4"
+            print(video_path)
             cap = cv2.VideoCapture(str(video_path))
             if not cap.isOpened():
                 print(f"Video {video_path} could not be opened")
@@ -176,6 +178,7 @@ for TASK_NAME in task_names:
 
             frames = []
             while True:
+                # print("frame got")
                 ret, frame = cap.read()
                 if not ret:
                     break
@@ -189,6 +192,7 @@ for TASK_NAME in task_names:
 
                 frame = cv2.resize(frame, save_img_size)
                 frames.append(frame)
+      
 
             observation[f"pixels{idx}"] = np.array(frames)
 
@@ -235,6 +239,7 @@ for TASK_NAME in task_names:
         cmd_gripper_states = state["cmd_gripper_state"].values.astype(np.float32)
         observation["cmd_cartesian_states"] = cmd_cartesian_states.astype(np.float32)
         observation["cmd_gripper_states"] = cmd_gripper_states.astype(np.float32)
+        # import ipdb; ipdb.set_trace()
 
         if process_points:
             # Robot Tracks
@@ -317,7 +322,7 @@ for TASK_NAME in task_names:
                 time.sleep(5)
                 context = zmq.Context()
                 socket = context.socket(zmq.REQ)
-                socket.connect("tcp://172.24.71.224:6000")
+                socket.connect("tcp://100.96.11.47:6000")
 
                 frames = observation[pixel_key]
                 # CV2 reads in BGR format, so we need to convert to RGB
@@ -328,13 +333,27 @@ for TASK_NAME in task_names:
                 # image = Image.fromarray(frame[..., ::-1])  # CV2 reads in BGR format
                 image = Image.fromarray(frame)  # CV2 reads in BGR format
                 serialized_image = serialize_image(image)
+                # frame = frames[0]
+                # h, w = frame.shape[:2]
+
+                # # ① 计算中心裁剪区域（75 % 大小）
+                # crop_w, crop_h = int(w * 0.4), int(h * 0.4)
+                # x1 = (w - crop_w) // 2
+                # y1 = (h - crop_h) // 2
+                # cropped = frame[y1:y1 + crop_h, x1:x1 + crop_w]
+
+                # # ② 再插值回原分辨率，实现“放大”效果
+                # zoomed_frame = cv2.resize(cropped, (w, h), interpolation=cv2.INTER_CUBIC)
+
+                # image = Image.fromarray(zoomed_frame)
+                # serialized_image = serialize_image(image)
 
                 # get bbox of object
                 for object_label in object_labels:
                     request = {
                         "image": serialized_image,
                         "image_path": "",
-                        "query": f"Get the bounding box of the {object_label} in the image",
+                        "query": f"Get the bounding box of the {object_label} in the image",  
                     }
                     socket.send_json(request)
                     response = socket.recv_json()
@@ -404,7 +423,7 @@ for TASK_NAME in task_names:
                     print("added")
 
                     # if use_gt_depth:
-                    if not use_depth_anything:
+                    if not use_depth_anything and use_gt_depth:
                         depth = depth_frames[cam_idx][idx]
                         points_class.set_depth(
                             depth,
@@ -414,7 +433,7 @@ for TASK_NAME in task_names:
                             (crop_h, crop_w),
                         )
                         print("set depth")
-                    else:
+                    elif use_depth_anything:
                         # get depth from the previous frame
                         points_class.get_depth(
                             pixel_key,

@@ -2,9 +2,13 @@ import torch
 import numpy as np
 
 camera2pixelkey = {
-    "cam_1": "pixels1",
+    # "cam_1": "pixels1",
     "cam_2": "pixels2",
-    "cam_51": "pixels51",
+    # "cam_3": "pixels3",
+    "cam_4": "pixels4",
+    "cam_5": "pixels5",
+    "cam_6": "pixels6",
+    # "cam_51": "pixels51",
 }
 pixelkey2camera = {v: k for k, v in camera2pixelkey.items()}
 

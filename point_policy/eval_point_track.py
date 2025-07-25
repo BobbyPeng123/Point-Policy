@@ -11,6 +11,7 @@ from pathlib import Path
 import hydra
 import torch
 import numpy as np
+import sys, os, warnings
 
 import utils
 from logger import Logger
@@ -19,6 +20,14 @@ from video import VideoRecorder
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 torch.backends.cudnn.benchmark = True
+
+hand = "right"                       # default
+for arg in sys.argv:
+    if arg.startswith("--hand="):
+        hand = arg.split("=", 1)[1]
+        sys.argv.remove(arg)         # hide it from Hydra
+        break
+os.environ["HAND"] = hand
 
 
 def make_agent(obs_spec, action_spec, cfg):
@@ -35,6 +44,7 @@ def make_agent(obs_spec, action_spec, cfg):
 
 class Workspace:
     def __init__(self, cfg):
+        # import ipdb; ipdb.set_trace()
         self.work_dir = Path.cwd()
         print(f"workspace: {self.work_dir}")
 
@@ -82,7 +92,7 @@ class Workspace:
         except:
             pass
 
-        self.env, self.task_descriptions = hydra.utils.call(self.cfg.suite.task_make_fn)
+        self.env, self.task_descriptions = hydra.utils.call(self.cfg.suite.task_make_fn) #reset
 
         # create agent
         self.agent = make_agent(
