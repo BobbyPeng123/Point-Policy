@@ -29,7 +29,7 @@ hidden_dim: 256
 # train settings
 num_train_steps: 100100
 log_every_steps: 100
-save_every_steps: 10000
+save_every_steps: 5000 #10000
 history: true
 history_len: 10
 
@@ -43,8 +43,8 @@ action_after_steps: 1
 
 # obs_keys
 # pixel_keys: ["pixels1", "pixels2"]
-# pixel_keys: ["pixels2", "pixels5"] #######################
-pixel_keys: ["pixels4", "pixels6"]
+pixel_keys: ["pixels2", "pixels5"] #######################
+# pixel_keys: ["pixels4", "pixels6"]
 proprio_key: "proprioceptive"
 feature_key: "features"
 

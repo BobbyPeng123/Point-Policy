@@ -8,6 +8,7 @@ import dm_env
 import numpy as np
 from dm_env import StepType, specs, TimeStep
 
+import os
 import cv2
 import torch
 from scipy.spatial.transform import Rotation as R
@@ -103,6 +104,10 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             points_cfg["pixel_keys"] = self._pixel_keys
             points_cfg["object_labels"] = object_labels
             self._points_class = PointsClass(**points_cfg)
+            self._des_object = os.environ.get("DES_OBJECT",
+                                  self._object_labels[0]
+                                  if self._object_labels else "")
+            print(f'we are using {self._des_object} as the desired object')
 
         # calibration data
         assert calib_path is not None
@@ -230,7 +235,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 pt2d = self._track_pts[pixel_key]
                 # Use Depth Anything if enabled; otherwise, use the provided depth map.
                 if self._use_depth_anything:
-                    import ipdb; ipdb.set_trace()
+                    # import ipdb; ipdb.set_trace()
                     depth_map = self._depth_model.get_depth(obs[pixel_key])
                 else:
                     depth_key = f"depth{pixel_key[-1]}"
@@ -253,7 +258,6 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
     def step(self, action):
         self._step += 1
-
         robot_action = self.point2action(action)
         print("Robot action:", robot_action)
         obs, reward, done, info = self._env.step(robot_action)
@@ -325,6 +329,137 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         self.observation = observation
 
         return observation, reward, done, info
+    
+    # def step(self, action):
+    #     # ------------------------------------------------------------------
+    #     # 1) Environment step
+    #     # ------------------------------------------------------------------
+    #     self._step += 1
+
+    #     robot_action = self.point2action(action)
+    #     print("Robot action:", robot_action)
+    #     obs, reward, done, info = self._env.step(robot_action)
+
+    #     self._current_pose = obs["features"]
+
+    #     # ------------------------------------------------------------------
+    #     # 2) Build raw observation dict (RGB frames only for now)
+    #     # ------------------------------------------------------------------
+    #     observation = {}
+    #     for pixel_key in self._pixel_keys:
+    #         observation[pixel_key] = obs[pixel_key]
+
+    #     # ------------------------------------------------------------------
+    #     # 3) 2‑D point tracks (robot + optional objects) for every camera
+    #     # ------------------------------------------------------------------
+    #     robot_points, robot_points_3d = self.get_pixel_on_robot()          # ← 2‑D & 3‑D
+    #     self.prev_gripper_points = robot_points_3d
+
+    #     for pixel_key in self._pixel_keys:
+    #         robot_point = robot_points[pixel_key]                          # (N_r,2)
+    #         current_track = robot_point
+
+    #         if self._use_object_points:
+    #             self._points_class.add_to_image_list(obs[pixel_key][:, :, ::-1],
+    #                                                 pixel_key)
+    #             self._points_class.track_points(pixel_key)
+    #             object_pts = self._points_class.get_points_on_image(pixel_key)\
+    #                                             .numpy()[0]               # (N_o,2)
+    #             current_track = np.concatenate([current_track, object_pts], axis=0)
+
+    #         self._track_pts[pixel_key] = current_track
+    #         observation[f"point_tracks_{pixel_key}"] = current_track       # (N,2)
+
+    #     # ------------------------------------------------------------------
+    #     # 4) Lift to 3‑D if requested
+    #     # ------------------------------------------------------------------
+    #     if self._point_dim == 3:
+    #         if not self._use_gt_depth:
+    #             Ps, pts2d_all = [], []
+    #             for pixel_key in self._pixel_keys:
+    #                 camera_name = pixelkey2camera[pixel_key]
+    #                 Ps.append(self.camera_projections[camera_name])        # 4×4
+    #                 pts2d_all.append(self._track_pts[pixel_key])           # (N,2)
+
+    #             pts3d = triangulate_points(Ps, pts2d_all)[:, :3]           # (N,3)
+    #             pts3d[: self._num_robot_points] = robot_points_3d          # keep GT
+    #             for pixel_key in self._pixel_keys:
+    #                 observation[f"point_tracks_{pixel_key}"] = np.array(pts3d)
+
+    #         else:  # depth supervision per camera
+    #             for pixel_key in self._pixel_keys:
+    #                 camera_name = pixelkey2camera[pixel_key]
+    #                 pt2d = self._track_pts[pixel_key]
+
+    #                 if self._use_depth_anything:
+    #                     depth_map = self._depth_model.get_depth(obs[pixel_key])
+    #                 else:
+    #                     depth_key = f"depth{pixel_key[-1]}"
+    #                     depth_map = obs[depth_key]
+
+    #                 depths = [depth_map[int(pt[1]), int(pt[0])]
+    #                         for pt in pt2d]                              # (N,)
+    #                 depths = np.array(depths) / 1000.0                     # → m
+
+    #                 extr = self.calibration_data[camera_name]["ext"]
+    #                 intr = self.calibration_data[camera_name]["int"]
+    #                 pt3d = pixel2d_to_3d(pt2d, depths, intr, extr)         # (N,3)
+    #                 observation[f"point_tracks_{pixel_key}"] = pt3d
+
+    #     # ------------------------------------------------------------------
+    #     # 5) Book‑keeping flags
+    #     # ------------------------------------------------------------------
+    #     observation["features"] = self._current_pose
+    #     observation["goal_achieved"] = done
+
+    #     if self._step >= self._max_episode_len:
+    #         done = True
+    #     done = done | observation["goal_achieved"]
+
+    #     self.observation = observation
+
+    #     # ==================================================================
+    #     # 6) DEBUG VISUALISATION  – re‑project 3‑D points onto every camera
+    #     #    Comment‑out this whole block when you no longer need the PNGs.
+    #     # ==================================================================
+    #     import cv2
+    #     from pathlib import Path
+    #     debug_dir = Path("debug_imgs")
+    #     debug_dir.mkdir(exist_ok=True)
+
+    #     for pixel_key in self._pixel_keys:
+    #         img = self.observation[pixel_key].copy()
+
+    #         pts3d = self.observation[f"point_tracks_{pixel_key}"]
+    #         if pts3d.ndim != 2 or pts3d.shape[1] != 3:       # skip if still 2‑D
+    #             continue
+
+    #         camera_name = pixelkey2camera[pixel_key]
+    #         P = self.camera_projections[camera_name]         # robot‑base → camera
+    #         R, t = P[:3, :3], P[:3, 3]
+    #         rvec, _ = cv2.Rodrigues(R)
+
+    #         K = self.calibration_data[camera_name]["int"]
+    #         D = np.zeros(5)                                  # assume no distortion
+
+    #         pts2d, _ = cv2.projectPoints(pts3d.astype(np.float32),
+    #                                     rvec, t, K, D)      # (N,1,2)
+
+    #         for (x, y) in pts2d[:, 0].astype(int):
+    #             cv2.circle(img, (x, y), 3, (255, 0, 0), -1)
+
+    #         cv2.imwrite(str(debug_dir /
+    #                         f"step{self._step:04d}_{pixel_key}.png"),
+    #                     img)
+
+    #     import ipdb; ipdb.set_trace()   # ← handy breakpoint
+    #     # ==================================================================
+
+    #     # ------------------------------------------------------------------
+    #     # 7) Return
+    #     # ------------------------------------------------------------------
+    #     return observation, reward, done, info
+
 
     def observation_spec(self):
         return self._obs_spec
@@ -416,7 +551,9 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                     request = {
                         "image": serialized_image,
                         "image_path": "",
-                        "query": f"Get the bounding box of the {object_label} in the image",
+                        # "query": f"Get the bounding box of the {object_label} in the image",
+                        # "query": f"Get the bounding box of the bottle in the image",
+                        "query": f"Get the bounding box of the {self._des_object} in the image",
                     }
                     socket.send_json(request)
                     response = socket.recv_json()

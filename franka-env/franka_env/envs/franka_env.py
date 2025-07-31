@@ -57,8 +57,9 @@ class FrankaEnv(gym.Env):
         )
 
         if self.use_robot:
+            self.cam_ids = [2,5]
             # self.cam_ids = [2,4,5,6] ####################################################
-            self.cam_ids = [4,6]
+            # self.cam_ids = [4,6]
             self.image_subscribers = {}
             if self.use_gt_depth:
                 self.depth_subscribers = {}
@@ -165,7 +166,7 @@ class FrankaEnv(gym.Env):
         # import ipdb; ipdb.set_trace()
         if self.use_robot:
             if reset_flag:
-                print("resetting")
+                print("resetting, gg, gg")
                 # import ipdb; ipdb.set_trace()
                 franka_action = FrankaAction(
                     pos=np.zeros(3),
@@ -184,7 +185,7 @@ class FrankaEnv(gym.Env):
                 self.franka_state = franka_state
                 print("reset done: ", franka_state)
             else:
-                print("not resetting")
+                print("not resetting, gg, gg")
                 self.action_request_socket.send(b"get_state")
                 franka_state: FrankaState = pickle.loads(self.action_request_socket.recv())
                 self.franka_state = franka_state

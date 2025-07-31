@@ -121,6 +121,11 @@ TASK_MODELS = {
         "hand": "right",
         "use_object_point": False,
     },
+    "open_the_fridge_door_right_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.30/point_policy/deterministic/010031_hidden_dim_256/snapshot/10000.pt",
+        "hand": "right",
+        "use_object_point": False,
+    },
     "place_bottle": {
         "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.03/point_policy/deterministic/010549_hidden_dim_256/snapshot/50000.pt",
         "hand": "right",
@@ -131,9 +136,19 @@ TASK_MODELS = {
         "hand": "right",
         "use_object_point": True,
     },
+    "pick_bottle_from_fridge_and_place_the_bottle_right_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.30/point_policy/deterministic/030818_hidden_dim_256/snapshot/10000.pt",
+        "hand": "right",
+        "use_object_point": True,
+    },
     "pick_bottle_left_robot": {
         "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.12/point_policy/deterministic/061129_hidden_dim_256/snapshot/50000.pt",
         "hand": "left",
+        "use_object_point": True,
+    },
+    "pick_bottle_from_side_door_of_fridge_and_place_the_bottle_right_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.30/point_policy/deterministic/044206_hidden_dim_256/snapshot/10000.pt",
+        "hand": "right",
         "use_object_point": True,
     },
     "place_bottle_left_robot": {
@@ -143,19 +158,21 @@ TASK_MODELS = {
     },
     "pick_bottle_from_fridge_left_robot": {
         # "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.14/point_policy/deterministic/064254_hidden_dim_256/snapshot/10000.pt",
-        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.16/point_policy/deterministic/080420_hidden_dim_256/snapshot/10000.pt",
+        # "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.16/point_policy/deterministic/080420_hidden_dim_256/snapshot/10000.pt",
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.25/point_policy/deterministic/084458_hidden_dim_256/snapshot/10000.pt",
         "hand": "left",
         "use_object_point": True,
     },
     "place_bottle_from_fridge_left_robot": {
-        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.15/point_policy/deterministic/071919_hidden_dim_256/snapshot/10000.pt",
+        # "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.26/point_policy/deterministic/081032_hidden_dim_256/snapshot/10000.pt",
+        "model": '/home/bobby/Point-Policy/point_policy/exp_local/2025.07.26/point_policy/deterministic/125617_hidden_dim_256/snapshot/10000.pt',
         "hand": "left",
         "use_object_point": False,
     },
 }
 
 
-def launch_eval(task_name: str, model_path: str, hand: str, use_object_point=True):
+def launch_eval(task_name: str, model_path: str, hand: str, des_object: str, use_object_point=True):
     """Spawn `eval_point_track.py` with the correct flags/env."""
     if use_object_point:
         use_object = "true"
@@ -173,7 +190,7 @@ def launch_eval(task_name: str, model_path: str, hand: str, use_object_point=Tru
                 "suite.pixel_keys=[pixels4,pixels6]",
                 "suite.task_make_fn.calib_path=/home/bobby/Point-Policy/calib/calib_46_left_robot.npy",
                 "experiment=eval_point_policy",
-                'suite.task_make_fn.reset_flag=False',
+                'suite.task_make_fn.reset_flag=True',
                 f"suite/task/franka_env={task_name}",
                 f"bc_weight={model_path}",
             ]
@@ -191,30 +208,53 @@ def launch_eval(task_name: str, model_path: str, hand: str, use_object_point=Tru
                 "suite.pixel_keys=[pixels2,pixels5]",
                 "suite.task_make_fn.calib_path=/home/bobby/Point-Policy/calib/calib_25_right_robot.npy",
                 "experiment=eval_point_policy",
-                'suite.task_make_fn.reset_flag=False',
+                'suite.task_make_fn.reset_flag=True',
                 f"suite/task/franka_env={task_name}",
                 f"bc_weight={model_path}",
             ]
     else:
         use_object = 'false'
-        cmd = [
-            "python",
-            "eval_point_track.py",
-            f"--hand={hand}",  # NEW: propagate chosen arm
-            "agent=point_policy",
-            "suite=point_policy",
-            "dataloader=point_policy",
-            "eval=true",
-            "suite.use_robot_points=true",
-            f"suite.use_object_points={use_object}",
-            'suite.task_make_fn.points_cfg=null',
-            "experiment=eval_point_policy",
-            'suite.task_make_fn.reset_flag=False',
-            f"suite/task/franka_env={task_name}",
-            f"bc_weight={model_path}",
-        ]
+        if hand == 'left':
+            cmd = [
+                "python",
+                "eval_point_track.py",
+                f"--hand={hand}",  # NEW: propagate chosen arm
+                "agent=point_policy",
+                "suite=point_policy",
+                "dataloader=point_policy",
+                "eval=true",
+                "suite.use_robot_points=true",
+                f"suite.use_object_points={use_object}",
+                "suite.pixel_keys=[pixels4,pixels6]",
+                "suite.task_make_fn.calib_path=/home/bobby/Point-Policy/calib/calib_46_left_robot.npy",
+                'suite.task_make_fn.points_cfg=null',
+                "experiment=eval_point_policy",
+                'suite.task_make_fn.reset_flag=True',
+                f"suite/task/franka_env={task_name}",
+                f"bc_weight={model_path}",
+            ]
+        elif hand == 'right':
+            cmd = [
+                "python",
+                "eval_point_track.py",
+                f"--hand={hand}",  # NEW: propagate chosen arm
+                "agent=point_policy",
+                "suite=point_policy",
+                "dataloader=point_policy",
+                "eval=true",
+                "suite.use_robot_points=true",
+                f"suite.use_object_points={use_object}",
+                "suite.pixel_keys=[pixels2,pixels5]",
+                "suite.task_make_fn.calib_path=/home/bobby/Point-Policy/calib/calib_25_right_robot.npy",
+                'suite.task_make_fn.points_cfg=null',
+                "experiment=eval_point_policy",
+                'suite.task_make_fn.reset_flag=True',
+                f"suite/task/franka_env={task_name}",
+                f"bc_weight={model_path}",
+            ]
 
-    env = {**os.environ, "HAND": hand}  # also expose via env var
+    # env = {**os.environ, "HAND": hand}  # also expose via env var
+    env = {**os.environ, "HAND": hand, "DES_OBJECT": des_object} 
     print("Launching eval with command:\n  " + " ".join(cmd))
     return subprocess.Popen(cmd, env=env)
 
@@ -343,7 +383,7 @@ def main():
             print("Previous evaluation process terminated.")
 
         # Launch new evaluation.
-        eval_process = launch_eval(task_name, model_path, hand, use_object)
+        eval_process = launch_eval(task_name, model_path, hand, des_object, use_object)
 
 
 if __name__ == "__main__":

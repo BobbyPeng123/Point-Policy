@@ -65,7 +65,8 @@ use_depth_anything = False
 # import ipdb; ipdb.set_trace()
 
 # camera_indices = [1, 2]
-camera_indices = [4, 6]
+# camera_indices = [4, 6]
+camera_indices = [2, 5]
 original_img_size = (640, 480)
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 save_img_size = (256, 256)
@@ -353,7 +354,7 @@ for TASK_NAME in task_names:
                     request = {
                         "image": serialized_image,
                         "image_path": "",
-                        "query": f"Get the bounding box of the {object_label} in the image",  
+                        "query": f"Get the bounding box of the {object_label} in the image, you can directly use dino_object_detection to get the bbox, the bottle is guaranteed to be in the image.",  
                     }
                     socket.send_json(request)
                     response = socket.recv_json()

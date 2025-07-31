@@ -344,7 +344,10 @@ for TASK_NAME in task_names:
                     response = socket.recv_json()
 
                     points = response["points"]
-                    print(points) # normalized [[0.406, 0.819], [0.422, 0.827]]
+                    # only keep one point
+                    if len(points) > 1:
+                        points = points[:1]  # keep only the first point
+                    print(points)  # normalized [[0.406, 0.819], [0.422, 0.827]]
                     print(response["raw_text"])
 
                     annotated_image_b64 = response["annotated_image"]

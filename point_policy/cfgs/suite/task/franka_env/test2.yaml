@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+
+task_name: test2
+object_labels: []
+num_object_points: 0

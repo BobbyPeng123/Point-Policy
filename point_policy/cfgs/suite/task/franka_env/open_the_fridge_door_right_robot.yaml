@@ -1,0 +1,7 @@
+defaults:
+  - _self_
+
+task_name: open_the_fridge_door_right_robot
+# object_labels: [bottle, basket]
+object_labels: []
+num_object_points: 0
