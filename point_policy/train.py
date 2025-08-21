@@ -91,6 +91,13 @@ class WorkspaceIL:
 
         self.env, self.task_descriptions = hydra.utils.call(self.cfg.suite.task_make_fn)
 
+        # #debug
+        # for pk in self.cfg.suite.pixel_keys:
+        #     import ipdb; ipdb.set_trace()
+        #     shp = self.env[0].observation_spec()[f'point_tracks_{pk}'].shape
+        #     assert shp[0] == 10, f"{pk} 观察到 {shp[0]} 个点，应为 10"
+        #     print(f"[INIT] {pk} shape = {shp}")
+
         # create agent
         self.agent = make_agent(
             self.env[0].observation_spec(), self.env[0].action_spec(), cfg

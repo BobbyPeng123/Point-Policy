@@ -1,0 +1,7 @@
+defaults:
+  - _self_
+
+task_name: place_bottle_from_the_fridge_left_robot
+# object_labels: [bottle, basket]
+object_labels: [empty_space]
+num_object_points: 1

@@ -11,9 +11,9 @@ outside the current working directory.
 
 # ---------------- User parameters ----------------
 DATA_DIR   = Path("/home/bobby/data/expert_demos/franka_env")
-TASK_NAME  = "pick_bottle_from_side_door_of_fridge_and_place_the_bottle_right_robot"
+TASK_NAME  = "place_bottle_from_the_fridge_left_robot"  # e.g. "pick_bottle_from_the_fridge_left_robot"
 PLOT_PTS   = True
-PIXEL_KEYS = ["pixels2", "pixels5"]
+PIXEL_KEYS = ["pixels4", "pixels6"]
 ORIG_SIZE  = (640, 480)  # original frame resolution used during demo collection
 HISTORY_K  = 1           # number of previous frames whose points we overlay
 TRAJ_IDX   = None        # list[int] | None → process all trajectories if None
@@ -49,6 +49,7 @@ if TRAJ_IDX is None:
     TRAJ_IDX = list(range(len(data["observations"])))
 
 # ---------------- Main loop ---------------------
+# import ipdb; ipdb.set_trace()  # Debugging breakpoint
 for t_idx in TRAJ_IDX:
     print(f"\n=== Processing trajectory {t_idx} ===")
     obs = data["observations"][t_idx]

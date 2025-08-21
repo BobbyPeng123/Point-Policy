@@ -41,6 +41,8 @@ except ImportError as exc:  # pragma: no cover
 # ─────────────────────────── Configuration ──────────────────────────────────
 SERVER_ADDR = "tcp://100.96.11.47:6000"
 
+PLACING_LEFT_FLAG = True 
+
 TASK_MODELS: Dict[str, Dict[str, object]] = {
     # keep in sync with manual_eval.py
     "open_fridge_door_right_robot": {
@@ -75,11 +77,26 @@ TASK_MODELS: Dict[str, Dict[str, object]] = {
         "use_object_point": True,
         "reset_flag": True,
     },
-    "place_bottle_from_fridge_left_robot": {
-        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.26/point_policy/deterministic/081032_hidden_dim_256/snapshot/10000.pt",
+    "pick_bottle_from_the_fridge_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.15/point_policy/deterministic/222054_hidden_dim_256/snapshot/15000.pt",
         "hand": "left",
-        "use_object_point": False,
+        "use_object_point": True,
+        "reset_flag": True,
+    },
+    "place_bottle_from_the_fridge_left_robot": {
+        # "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.16/point_policy/deterministic/115405_hidden_dim_256/snapshot/5000.pt",
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.18/point_policy/deterministic/110015_hidden_dim_256/snapshot/5000.pt",
+        "hand": "left",
+        "use_object_point": True,
         "reset_flag": False,
+        "use_pin_point": True,
+    },
+    "place_bottle_from_the_fridge_left_pos_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.16/point_policy/deterministic/121910_hidden_dim_256/snapshot/5000.pt",
+        "hand": "left",
+        "use_object_point": True,
+        "reset_flag": False,
+        "use_pin_point": True,
     },
     "open_the_fridge_door_right_robot": {
         "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.30/point_policy/deterministic/010031_hidden_dim_256/snapshot/10000.pt",
@@ -113,6 +130,7 @@ def _bgr_to_pil(bgr):
 
 
 def _parse_task(raw: str) -> Tuple[str, str]:
+    global PLACING_LEFT_FLAG
     """Extract task and object from '[task, obj]' (obj optional)."""
     inner = raw.strip()[1:-1]
     parts = [s.strip() for s in inner.split(",", 1)]
@@ -123,9 +141,16 @@ def _parse_task(raw: str) -> Tuple[str, str]:
     if "pick_bottle" in task and "side_door" in task: 
         task = "pick_bottle_from_side_door_of_fridge_and_place_the_bottle_right_robot"
     elif "pick_bottle" in task:
-        task = "pick_bottle_from_fridge_and_place_the_bottle_right_robot"
+        task = "pick_bottle_from_the_fridge_left_robot"
     elif "open_fridge_door" in task: task = "open_fridge_door_right_robot"
     elif "open_the_fridge_door" in task: task = "open_the_fridge_door_right_robot"
+    elif "place_bottle" in task:
+        if PLACING_LEFT_FLAG:
+            task = "place_bottle_from_the_fridge_left_pos_left_robot"
+        else:
+            task = "place_bottle_from_the_fridge_left_robot"
+        
+        PLACING_LEFT_FLAG = not PLACING_LEFT_FLAG
 
     return task, obj
 
@@ -144,6 +169,10 @@ class ChainEvalFranka:
         self.task_complete = True
         self.current_task = ""
         self.current_des_obj = ""
+        self.max_judge_rounds = 6  # max rounds of judging before giving up
+        self.judge_rounds = 0  # current round of judging
+        # ── NEW: Judge not before ──
+        self.judge_not_before: float = 0.0
 
     # ───────────── ZMQ ─────────────
     def _rpc(self, query: str, images: List[str]):
@@ -157,6 +186,38 @@ class ChainEvalFranka:
             enc.append(_serialize_pil(_bgr_to_pil(frame)))
         return enc
 
+    # ───────────── reset helper ─────────────
+    def _reset_robot(self, hand: str):
+        """
+        Block until reset.py completes. Mirrors the right/left branches
+        in manual_eval.launch_reset (defaults tailored for right arm).
+        """
+        if hand == "left":
+            pixel_keys = "[pixels4,pixels6]"
+            franka_env = "pick_bottle_left_robot"
+        else:
+            pixel_keys = "[pixels2,pixels5]"
+            franka_env = "open_fridge_door_right_robot"
+
+        cmd = [
+            "python",
+            "reset.py",
+            f"--hand={hand}",
+            "agent=point_policy",
+            "suite=point_policy",
+            "dataloader=point_policy",
+            "eval=true",
+            "suite.use_robot_points=true",
+            "suite.use_object_points=false",
+            f"suite.pixel_keys={pixel_keys}",
+            "suite.task_make_fn.points_cfg=null",
+            "suite.task_make_fn.reset_flag=True",
+            f"suite/task/franka_env={franka_env}",
+        ]
+        env = {**os.environ, "HAND": hand}
+        print("[→] Launching reset:\n  " + " ".join(cmd))
+        subprocess.run(cmd, env=env, check=True)
+
     # ─────────── eval helpers ──────
     def _stop_eval(self):
         if self.eval_proc and self.eval_proc.poll() is None:
@@ -166,9 +227,23 @@ class ChainEvalFranka:
             print("[✓] Eval process terminated.")
         self.eval_proc = None
 
-    def _start_eval(self, task: str, model: str, hand: str, obj: str, use_obj_pt: bool, reset_flag: bool = False):
+    def _start_eval(self, task: str, model: str, hand: str, obj: str, use_obj_pt: bool, reset_flag: bool = False, use_pin_pt: bool = False):
         obj_flag = "true" if use_obj_pt else "false"
-        extra = [] if use_obj_pt else ["suite.task_make_fn.points_cfg=null"]
+        pin_point_flag = "true" if use_pin_pt else "false"
+        extra = ["suite.task_make_fn.points_cfg=null"] if use_pin_pt == use_obj_pt else []
+        if use_pin_pt:
+            extra.append("suite.num_object_points=1")
+
+        print(f"extra: {extra}, use_obj_pt: {use_obj_pt}, use_pin_pt: {use_pin_pt}")
+        # exit()
+        # extra = []
+        # if use_pin_pt:
+        #     if use_obj_pt:
+        #         extra = ["suite.task_make_fn.points_cfg=null"]
+        # else:
+        #     if not use_obj_pt:
+        #         extra = ["suite.task_make_fn.points_cfg=null"]
+        # extra = [] if use_obj_pt else ["suite.task_make_fn.points_cfg=null"]
 
         if hand == "left":
             pixel_keys = "[pixels4,pixels6]"
@@ -187,6 +262,7 @@ class ChainEvalFranka:
             "eval=true",
             "suite.use_robot_points=true",
             f"suite.use_object_points={obj_flag}",
+            f"suite.use_pin_points={pin_point_flag}",
             f"suite.pixel_keys={pixel_keys}",
             f"suite.task_make_fn.calib_path={calib}",
             "experiment=eval_point_policy",
@@ -199,6 +275,12 @@ class ChainEvalFranka:
         env = {**os.environ, "HAND": hand, "DES_OBJECT": obj}
         print("[→] Launching eval:\n  " + " ".join(cmd))
         self.eval_proc = subprocess.Popen(cmd, env=env)
+
+        # ── NEW: 根据 extra 是否包含 points_cfg=null 决定 Judge 延迟 ──
+        has_points_cfg_null = any(s.startswith("suite.task_make_fn.points_cfg=null") for s in extra)
+        delay = 12 if has_points_cfg_null else 60
+        self.judge_not_before = time.time() + delay
+        print(f"[→] Judge will start after {delay}s (points_cfg_null={has_points_cfg_null}).")
 
     # ───────────── Main loop ───────
     def run(self):
@@ -215,6 +297,8 @@ class ChainEvalFranka:
                 if result in ("", "stop") or ("stop" in result and "[" not in result):
                     print("[✓] Server indicated STOP. Exiting.")
                     break
+
+                print("[→] Parsing task from reply:", result)
 
                 try:
                     task, des_obj = _parse_task(result)
@@ -235,10 +319,11 @@ class ChainEvalFranka:
 
                 # launch / switch policy
                 self._stop_eval()
-                self._start_eval(task, model, hand, des_obj, use_obj_pt, reset_flag)
+                self._start_eval(task, model, hand, des_obj, use_obj_pt, reset_flag, use_pin_pt=cfg.get("use_pin_point", False))
 
                 self.current_task = task
                 self.current_des_obj = des_obj
+                self.judge_rounds = 0
                 self.task_complete = False
                 print(f"[→] >>> New task: {task}, object: {des_obj} <<<")
 
@@ -247,7 +332,9 @@ class ChainEvalFranka:
             while not self.task_complete:
                 time.sleep(0.02)  # ~50 Hz
                 tick += 1
-                if tick % 800 == 0:  # 每约 4 s
+                if time.time() < self.judge_not_before:
+                    continue
+                if tick % 700 == 0:  # 每约 10 s
                     j_imgs = self._capture()
                     verdict = self._rpc(
                         f"Judge: {self.current_task} {self.current_des_obj}".strip(),
@@ -256,9 +343,33 @@ class ChainEvalFranka:
                     print("[✓] Judge reply:", verdict)
                     if "judge: task completed" in verdict.get("result", "").lower():
                         print(f"[✓] Task '{self.current_task}' completed.")
+                        time.sleep(8)  # 等待 8 秒，确保 eval.py 完成任务
                         self.task_complete = True
                         self._stop_eval()
+                        # ── NEW: if we just opened the fridge with the right arm, reset it now ──
+                        if "open_fridge_door" in self.current_task and "right" in self.current_task:
+                            print("[→] Resetting robot (right arm) after opening fridge door…")
+                            time.sleep(5)  # wait a bit before resetting
+                            self._reset_robot("right")
+                            print("[✓] Robot reset complete.")
+                        # ──────────────────────────────────────────────────────────────────────
                         break
+                    else:
+                        self.judge_rounds += 1
+                        print(f"[→] Judge round {self.judge_rounds}/{self.max_judge_rounds} for '{self.current_task}'.")
+                        if self.judge_rounds >= self.max_judge_rounds:
+                            print(f"[!] Max judge rounds reached ({self.max_judge_rounds}). Forcing completion.")
+                            self._stop_eval()
+                            # 与真实完成时保持一致的后置动作（含右手机器人的重置）
+                            if self.current_task in ("open_fridge_door_right_robot", "open_the_fridge_door_right_robot"):
+                                try:
+                                    print("[→] Auto-resetting right robot after forced completion…")
+                                    self._reset_robot("right")
+                                    print("[✓] Right robot reset complete.")
+                                except subprocess.CalledProcessError as e:
+                                    print(f"[!] Right-arm reset failed (returncode={e.returncode}); continuing.")
+                            self.task_complete = True
+                            break
 
         # ── Cleanup ──
         self._stop_eval()
@@ -268,9 +379,15 @@ class ChainEvalFranka:
 # ─────────────────────────── CLI ────────────────────────────────────────────
 def _parse_args():
     ap = argparse.ArgumentParser(description="Chain‑eval manager (Robot task prompt protocol)")
-    ap.add_argument("--prompt", type=str, default="Get the orange bottle out from fridge, and get pink bottle from the side door of the fridge",
+    ap.add_argument("--prompt", type=str, default="Get the bottle with Korean letters on it and coke bottle out from fridge",
                     help="High‑level prompt for the robot task")
-    ap.add_argument("--cam_ids", type=int, nargs="+", default=[5], help="Camera IDs (default: 6)")
+    # ap.add_argument("--prompt", type=str, default="Get purple bottle from the side door of the fridge",
+    #                 help="High‑level prompt for the robot task")
+    # ap.add_argument("--prompt", type=str, default="Get the orange bottle and green bottle out from fridge, and get pink bottle from the side door of the fridge",
+    #                 help="High‑level prompt for the robot task")
+    # ap.add_argument("--prompt", type=str, default="Get the orange bottle and green bottle out from fridge",
+    #                 help="High‑level prompt for the robot task")
+    ap.add_argument("--cam_ids", type=int, nargs="+", default=[5, 6], help="Camera IDs (default: 6)")
     ap.add_argument("--server", default=SERVER_ADDR, help="ZMQ server address")
     return ap.parse_args()
 

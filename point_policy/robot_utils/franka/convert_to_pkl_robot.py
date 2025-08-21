@@ -65,8 +65,8 @@ use_depth_anything = False
 # import ipdb; ipdb.set_trace()
 
 # camera_indices = [1, 2]
-# camera_indices = [4, 6]
-camera_indices = [2, 5]
+camera_indices = [4, 6]
+# camera_indices = [2, 5]
 original_img_size = (640, 480)
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 save_img_size = (256, 256)
@@ -419,9 +419,9 @@ for TASK_NAME in task_names:
                     points_3d_list.append(points3d)
 
                 for idx, image in enumerate(frames[1:]):
-                    print(f"Traj: {i}, Frame: {idx}, Image: {pixel_key}")
+                    # print(f"Traj: {i}, Frame: {idx}, Image: {pixel_key}")
                     points_class.add_to_image_list(image, pixel_key)
-                    print("added")
+                    # print("added")
 
                     # if use_gt_depth:
                     if not use_depth_anything and use_gt_depth:
@@ -459,7 +459,7 @@ for TASK_NAME in task_names:
                             one_frame=(mark_every == 1),
                         )
 
-                        print("tracked points")
+                        # print("tracked points")
 
                         points = points_class.get_points_on_image(
                             pixel_key, last_n_frames=mark_every

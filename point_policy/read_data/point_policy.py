@@ -122,6 +122,17 @@ class BCDataset(IterableDataset):
                 self._max_state_dim = self._num_robot_points * self._point_dim
                 self._num_samples += len(observations[i][self._pixel_keys[0]])
 
+                # # ---- 在 for 里每读完一个 observations[i] 后插入 ----
+                # for pk in self._pixel_keys:
+                #     k = f"point_tracks_{pk}"             # demo 里存的键名
+                #     if k in observations[i].keys():
+                #         # check how many points are there
+                #         num_points = observations[i][k].shape[1]
+                #         print(f"[INIT] {pk} has {num_points} points")
+                # # -----------------------------------------------------------
+                # import ipdb; ipdb.set_trace()
+
+
                 # min, max track
                 for pixel_key in self._pixel_keys:
                     if self._use_robot_points:
@@ -195,6 +206,8 @@ class BCDataset(IterableDataset):
 
         # Samples from envs
         self.envs_till_idx = len(self._episodes)
+
+        
 
     def _sample_episode(self, env_idx=None):
         if env_idx is not None:

@@ -163,9 +163,19 @@ TASK_MODELS = {
         "hand": "left",
         "use_object_point": True,
     },
+    "pick_bottle_from_the_fridge_left_robot": { ##
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.08/point_policy/deterministic/202800_hidden_dim_256/snapshot/15000.pt",
+        "hand": "left",
+        "use_object_point": True,
+    },
     "place_bottle_from_fridge_left_robot": {
         # "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.07.26/point_policy/deterministic/081032_hidden_dim_256/snapshot/10000.pt",
         "model": '/home/bobby/Point-Policy/point_policy/exp_local/2025.07.26/point_policy/deterministic/125617_hidden_dim_256/snapshot/10000.pt',
+        "hand": "left",
+        "use_object_point": False,
+    },
+    "place_bottle_from_the_fridge_left_robot": { ##
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.09/point_policy/deterministic/052310_hidden_dim_256/snapshot/15000.pt",
         "hand": "left",
         "use_object_point": False,
     },

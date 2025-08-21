@@ -20,6 +20,7 @@ point_dim: 3 # 2 or 3
 
 # object points
 use_object_points: true
+use_pin_points: false
 num_object_points: ${suite.task.num_object_points}
 
 # task settings
@@ -43,8 +44,8 @@ action_after_steps: 1
 
 # obs_keys
 # pixel_keys: ["pixels1", "pixels2"]
-pixel_keys: ["pixels2", "pixels5"] #######################
-# pixel_keys: ["pixels4", "pixels6"]
+# pixel_keys: ["pixels2", "pixels5"] #######################
+pixel_keys: ["pixels4", "pixels6"]
 proprio_key: "proprioceptive"
 feature_key: "features"
 
@@ -72,3 +73,4 @@ task_make_fn:
   use_depth_anything: ${suite.use_depth_anything}
   point_dim: ${suite.point_dim}
   reset_flag: True
+  use_pin_points: ${suite.use_pin_points}

@@ -57,8 +57,8 @@ class FrankaEnv(gym.Env):
         )
 
         if self.use_robot:
-            self.cam_ids = [2,5]
-            # self.cam_ids = [2,4,5,6] ####################################################
+            # self.cam_ids = [2,5]
+            self.cam_ids = [2,4,5,6] ####################################################
             # self.cam_ids = [4,6]
             self.image_subscribers = {}
             if self.use_gt_depth:

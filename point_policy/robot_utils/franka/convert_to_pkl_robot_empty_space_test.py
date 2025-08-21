@@ -331,21 +331,25 @@ for TASK_NAME in task_names:
 
                     # get bbox of object
                     for object_label in object_labels:
-                        # request = {
-                        #     "image": serialized_image,
-                        #     # "image": "",
-                        #     "image_path": "",
-                        #     # "image_path": "/home/bobby/RoboPoint/images/cam_2_rgb_video_1.png",
-                        #     "prompt": f"Please pinpoint 3 points in the empty space on the black blanket. Your answer should be formatted as a list of tuples, i.e. [(x1, y1), (x2, y2), ...], where each tuple contains the x and y coordinates of a point satisfying the conditions above. The coordinates should be between 0 and 1, indicating the normalized pixel locations of the points in the image.",
-                        # }
-                        # print("send request")
-                        # socket.send_json(request)
-                        # response = socket.recv_json()
+                        request = {
+                            "image": serialized_image,
+                            # "image": "",
+                            "image_path": "",
+                            # "image_path": "/home/bobby/RoboPoint/images/cam_2_rgb_video_1.png",
+                            "prompt": f"Please pinpoint 3 points in the empty space on the black blanket. Your answer should be formatted as a list of tuples, i.e. [(x1, y1), (x2, y2), ...], where each tuple contains the x and y coordinates of a point satisfying the conditions above. The coordinates should be between 0 and 1, indicating the normalized pixel locations of the points in the image.",
+                        }
+                        print("send request")
+                        socket.send_json(request)
+                        response = socket.recv_json()
 
-                        # points = response["points"]
+                        points = response["points"]
+                        # only save the first two points
+                        # points = points[:2]
+                        # only save the first one
+                        points = points[:1]
 
-                        # hack
-                        points = [[0.475, 0.892], [0.492, 0.89]]
+                        # # hack
+                        # points = [[0.475, 0.892], [0.492, 0.89]]
 
                         print(points) # normalized [[0.406, 0.819], [0.422, 0.827]]
                         # print(response["raw_text"])

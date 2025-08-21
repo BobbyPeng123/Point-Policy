@@ -64,7 +64,8 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         use_gt_depth=False,
         use_depth_anything=False,   # NEW parameter for Depth Anything mode
         point_dim=2,
-        reset_flag = True
+        reset_flag = True,
+        use_pin_points=False,
     ):
         self._env = env
         self._task_name = task_name
@@ -91,8 +92,21 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         self._num_robot_points = num_robot_points
         self._use_object_points = use_object_points
         self._num_object_points = num_object_points
+        self._use_pin_points = use_pin_points
 
-        if self.use_robot and self._use_object_points:
+        # ------------------------------------------------------------------
+        # pin-point servers (only when _use_pin_points=True)
+        # ------------------------------------------------------------------
+        if self.use_robot and self._use_pin_points:
+            self._robopoint_addr = os.getenv("ROBOPOINT_ADDR", "tcp://localhost:5558")
+            self._mast3r_addr    = os.getenv("MAST3R_ADDR",    "tcp://localhost:5559")
+
+            self._zmq_ctx = zmq.Context.instance()   # reuse one context
+            # sockets are created lazily on first call
+            self._robopoint_sock = None
+            self._mast3r_sock    = None
+
+        if self.use_robot and self._use_object_points and not self._use_pin_points:
             if points_cfg is None:
                 raise ValueError(
                     "points_cfg must be provided when use_object_points=True"
@@ -123,6 +137,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             self.camera_projections[camera_name] = intrinsic @ extrinsic
 
         obs = self._env.reset(reset_flag=self.reset_flag)  # maybe change here to control whether reset at the beginning
+        # import ipdb; ipdb.set_trace()
         if self.use_robot:
             pixels = obs[self._pixel_keys[0]]
             self.observation_space = spaces.Box(
@@ -256,79 +271,79 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         self.observation = observation
         return observation
 
-    def step(self, action):
-        self._step += 1
-        robot_action = self.point2action(action)
-        print("Robot action:", robot_action)
-        obs, reward, done, info = self._env.step(robot_action)
+    # def step(self, action):
+    #     self._step += 1
+    #     robot_action = self.point2action(action)
+    #     print("Robot action:", robot_action)
+    #     obs, reward, done, info = self._env.step(robot_action)
 
-        self._current_pose = obs["features"]
+    #     self._current_pose = obs["features"]
 
-        observation = {}
-        for pixel_key in self._pixel_keys:
-            observation[pixel_key] = obs[pixel_key]
+    #     observation = {}
+    #     for pixel_key in self._pixel_keys:
+    #         observation[pixel_key] = obs[pixel_key]
 
-        # robot points
-        robot_points, robot_points_3d = self.get_pixel_on_robot()
-        self.prev_gripper_points = robot_points_3d
-        for pixel_key in self._pixel_keys:
-            robot_point = robot_points[pixel_key]
-            current_track = robot_point
+    #     # robot points
+    #     robot_points, robot_points_3d = self.get_pixel_on_robot()
+    #     self.prev_gripper_points = robot_points_3d
+    #     for pixel_key in self._pixel_keys:
+    #         robot_point = robot_points[pixel_key]
+    #         current_track = robot_point
 
-            if self._use_object_points:
-                self._points_class.add_to_image_list(
-                    obs[pixel_key][:, :, ::-1], pixel_key
-                )
-                self._points_class.track_points(pixel_key)
-                object_pts = self._points_class.get_points_on_image(pixel_key).numpy()[0]
-                current_track = np.concatenate([current_track, object_pts], axis=0)
+    #         if self._use_object_points:
+    #             self._points_class.add_to_image_list(
+    #                 obs[pixel_key][:, :, ::-1], pixel_key
+    #             )
+    #             self._points_class.track_points(pixel_key)
+    #             object_pts = self._points_class.get_points_on_image(pixel_key).numpy()[0]
+    #             current_track = np.concatenate([current_track, object_pts], axis=0)
 
-            self._track_pts[pixel_key] = current_track
-            observation[f"point_tracks_{pixel_key}"] = current_track
+    #         self._track_pts[pixel_key] = current_track
+    #         observation[f"point_tracks_{pixel_key}"] = current_track
 
-        # Get 3d points from 3D depth or 2D triangulation
-        if self._point_dim == 3:
-            if not self._use_gt_depth:
-                P, pts = [], []
-                for pixel_key in self._pixel_keys:
-                    camera_name = pixelkey2camera[pixel_key]
-                    P.append(self.camera_projections[camera_name])
-                    pt2d = self._track_pts[pixel_key]
-                    pts.append(pt2d)
+    #     # Get 3d points from 3D depth or 2D triangulation
+    #     if self._point_dim == 3:
+    #         if not self._use_gt_depth:
+    #             P, pts = [], []
+    #             for pixel_key in self._pixel_keys:
+    #                 camera_name = pixelkey2camera[pixel_key]
+    #                 P.append(self.camera_projections[camera_name])
+    #                 pt2d = self._track_pts[pixel_key]
+    #                 pts.append(pt2d)
 
-                pts3d = triangulate_points(P, pts)[:, :3]
-                pts3d[: self._num_robot_points] = robot_points_3d
-                for pixel_key in self._pixel_keys:
-                    observation[f"point_tracks_{pixel_key}"] = np.array(pts3d)
-            else:
-                for pixel_key in self._pixel_keys:
-                    camera_name = pixelkey2camera[pixel_key]
-                    pt2d = self._track_pts[pixel_key]
-                    if self._use_depth_anything:
-                        depth_map = self._depth_model.get_depth(obs[pixel_key])
-                    else:
-                        depth_key = f"depth{pixel_key[-1]}"
-                        depth_map = obs[depth_key]
-                    depths = []
-                    for pt in pt2d:
-                        x, y = pt.astype(int)
-                        depths.append(depth_map[y, x])
-                    depths = np.array(depths) / 1000.0  # convert to meters
-                    extr = self.calibration_data[camera_name]["ext"]
-                    intr = self.calibration_data[camera_name]["int"]
-                    pt3d = pixel2d_to_3d(pt2d, depths, intr, extr)
-                    observation[f"point_tracks_{pixel_key}"] = pt3d
+    #             pts3d = triangulate_points(P, pts)[:, :3]
+    #             pts3d[: self._num_robot_points] = robot_points_3d
+    #             for pixel_key in self._pixel_keys:
+    #                 observation[f"point_tracks_{pixel_key}"] = np.array(pts3d)
+    #         else:
+    #             for pixel_key in self._pixel_keys:
+    #                 camera_name = pixelkey2camera[pixel_key]
+    #                 pt2d = self._track_pts[pixel_key]
+    #                 if self._use_depth_anything:
+    #                     depth_map = self._depth_model.get_depth(obs[pixel_key])
+    #                 else:
+    #                     depth_key = f"depth{pixel_key[-1]}"
+    #                     depth_map = obs[depth_key]
+    #                 depths = []
+    #                 for pt in pt2d:
+    #                     x, y = pt.astype(int)
+    #                     depths.append(depth_map[y, x])
+    #                 depths = np.array(depths) / 1000.0  # convert to meters
+    #                 extr = self.calibration_data[camera_name]["ext"]
+    #                 intr = self.calibration_data[camera_name]["int"]
+    #                 pt3d = pixel2d_to_3d(pt2d, depths, intr, extr)
+    #                 observation[f"point_tracks_{pixel_key}"] = pt3d
 
-        observation["features"] = self._current_pose
-        observation["goal_achieved"] = done
+    #     observation["features"] = self._current_pose
+    #     observation["goal_achieved"] = done
 
-        if self._step >= self._max_episode_len:
-            done = True
-        done = done | observation["goal_achieved"]
+    #     if self._step >= self._max_episode_len:
+    #         done = True
+    #     done = done | observation["goal_achieved"]
 
-        self.observation = observation
+    #     self.observation = observation
 
-        return observation, reward, done, info
+    #     return observation, reward, done, info
     
     # def step(self, action):
     #     # ------------------------------------------------------------------
@@ -460,6 +475,149 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
     #     # ------------------------------------------------------------------
     #     return observation, reward, done, info
 
+    def step(self, action):
+        # ------------------------------------------------------------------
+        # 1) 环境执行一步
+        # ------------------------------------------------------------------
+        self._step += 1
+
+        robot_action = self.point2action(action)
+        print("Robot action:", robot_action)
+        obs, reward, done, info = self._env.step(robot_action)
+
+        self._current_pose = obs["features"]
+
+        # ------------------------------------------------------------------
+        # 2) 组装 observation（先放 RGB 帧）
+        # ------------------------------------------------------------------
+        observation = {pk: obs[pk] for pk in self._pixel_keys}
+
+        # ------------------------------------------------------------------
+        # 3) 2-D 轨迹（机器人 + 目标物体）
+        # ------------------------------------------------------------------
+        robot_pts_2d, robot_pts_3d = self.get_pixel_on_robot()
+        self.prev_gripper_points = robot_pts_3d
+
+        for pk in self._pixel_keys:
+            cur_track = robot_pts_2d[pk]
+
+            if self._use_object_points and not self._use_pin_points:
+                # 使用对象关键点
+                self._points_class.add_to_image_list(obs[pk][:, :, ::-1], pk)
+                self._points_class.track_points(pk)
+                obj_pts = self._points_class.get_points_on_image(pk).numpy()[0]
+                cur_track = np.concatenate([cur_track, obj_pts], axis=0)
+            # --- B) pin-point 流程（PointClass 已经被绕开）---------
+            elif self._use_pin_points:
+                # 取上一帧保存的目标点，或者首帧 pin-point
+                pin_pts = self._track_pts[pk][-self._num_object_points :]
+                # 也可以在此处调用 MASt3R / CoTracker 对 pin_pts 做前向跟踪，
+                # 若暂时不跟踪，也至少把上一帧坐标沿用下来：
+                cur_track = np.concatenate([cur_track, pin_pts], axis=0)
+
+            self._track_pts[pk] = cur_track
+            observation[f"point_tracks_{pk}"] = cur_track
+
+        # ------------------------------------------------------------------
+        # 4) 提升到 3-D（如果需要）
+        # ------------------------------------------------------------------
+        if self._point_dim == 3:
+            if not self._use_gt_depth:
+                # (a) 三角测量
+                Ps, pts2d_all = [], []
+                for pk in self._pixel_keys:
+                    cam = pixelkey2camera[pk]
+                    Ps.append(self.camera_projections[cam])   # K·[R|t]
+                    pts2d_all.append(self._track_pts[pk])
+
+                pts3d = triangulate_points(Ps, pts2d_all)[:, :3]
+                pts3d[: self._num_robot_points] = robot_pts_3d
+                for pk in self._pixel_keys:
+                    observation[f"point_tracks_{pk}"] = pts3d
+            else:
+                # (b) 深度图反投影
+                for pk in self._pixel_keys:
+                    cam = pixelkey2camera[pk]
+                    pt2d = self._track_pts[pk]
+
+                    depth_map = (
+                        self._depth_model.get_depth(obs[pk])
+                        if self._use_depth_anything
+                        else obs[f"depth{pk[-1]}"]
+                    )
+
+                    depths = np.array([depth_map[int(y), int(x)] for x, y in pt2d]) / 1000.0
+                    extr = self.calibration_data[cam]["ext"]
+                    intr = self.calibration_data[cam]["int"]
+                    pt3d = pixel2d_to_3d(pt2d, depths, intr, extr)
+                    observation[f"point_tracks_{pk}"] = pt3d
+
+        # ------------------------------------------------------------------
+        # 5) 其它标志位
+        # ------------------------------------------------------------------
+        observation["features"] = self._current_pose
+        observation["goal_achieved"] = done
+
+        if self._step >= self._max_episode_len:
+            done = True
+        done = done | observation["goal_achieved"]
+
+        self.observation = observation
+
+        # # ==================================================================
+        # # 6) DEBUG 可视化 —— 把 3-D 点重新投影到各相机
+        # # ==================================================================
+        # import cv2
+        # from pathlib import Path
+        # debug_dir = Path("debug_imgs")
+        # debug_dir.mkdir(exist_ok=True)
+
+        # for pk in self._pixel_keys:
+        #     img = self.observation[pk].copy()
+        #     pts3d = self.observation[f"point_tracks_{pk}"]
+
+        #     # 只在已经是 3-D 时可视化
+        #     if pts3d.ndim != 2 or pts3d.shape[1] != 3:
+        #         continue
+
+        #     cam = pixelkey2camera[pk]
+
+        #     # —— 修 正 处 —— 直接使用外参，不再重复乘 K
+        #     extr = self.calibration_data[cam]["ext"]     # 4×4, world → cam
+        #     R_wc = extr[:3, :3]
+        #     t_wc = extr[:3, 3]
+        #     rvec, _ = cv2.Rodrigues(R_wc)
+
+        #     K = self.calibration_data[cam]["int"]        # 内参
+        #     D = np.zeros(5)                              # 若有畸变可替换
+
+        #     pts2d, _ = cv2.projectPoints(
+        #         pts3d.astype(np.float32), rvec, t_wc, K, D
+        #     )
+        #     pts2d = pts2d[:, 0]
+
+        #     print(f"[{pk}] x {pts2d[:,0].min():.1f}~{pts2d[:,0].max():.1f}, "
+        #         f"y {pts2d[:,1].min():.1f}~{pts2d[:,1].max():.1f}")
+
+        #     for x_f, y_f in pts2d:
+        #         x, y = int(round(x_f)), int(round(y_f))
+        #         if 0 <= x < img.shape[1] and 0 <= y < img.shape[0]:
+        #             cv2.circle(img, (x, y), 6, (0, 0, 255), -1)   # 红点
+        #         else:
+        #             print(f"⚠️  {pk} 投影点 ({x_f:.1f},{y_f:.1f}) 越界，已跳过")
+
+        #     cv2.imwrite(str(debug_dir / f"step{self._step:04d}_{pk}.png"), img)
+
+        # import ipdb; ipdb.set_trace()
+        # ==================================================================
+
+        # ------------------------------------------------------------------
+        # 7) 返回
+        # ------------------------------------------------------------------
+        return observation, reward, done, info
+
+
+
 
     def observation_spec(self):
         return self._obs_spec
@@ -519,7 +677,8 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
         self.base_robot_points = np.array(robot_points_3d)
         # orientation of the robot at the 0th step
-        self.robot_base_orientation = R.from_rotvec([np.pi, 0, 0]).as_matrix()
+        # self.robot_base_orientation = R.from_rotvec([np.pi, 0, 0]).as_matrix()
+        self.robot_base_orientation = R.from_quat(self._current_pose[3:7]).as_matrix() # (x, y, z, w) -> (R)
 
         # grid_pts = None
         self._track_pts = {}
@@ -534,8 +693,151 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             else:
                 points[0][:, -len(robot_pts[0]) :] = robot_pts
 
-            # modify to use server to get object points
-            if self._use_object_points:
+            # # modify to use server to get object points
+            # if self._use_pin_points:
+            #     # --------------------------------------------------------------
+            #     # (A) 通过 pin-points 获取对象关键点
+            #     # --------------------------------------------------------------
+            #     ref_pk = self._pixel_keys[0]                # 选第 1 号相机做参考
+            #     print(f"Using {ref_pk} as reference camera for pin-pointing")
+            #     height, width = obs[ref_pk].shape[:2]
+
+            #     # ------ 1) RoboPoint on ref camera ------
+            #     if pixel_key == ref_pk:
+            #         sock = self._get_socket("robopoint")
+            #         image_rgb = Image.fromarray(obs[ref_pk][..., ::-1])
+            #         req = {
+            #             "image": serialize_image(image_rgb),
+            #             "image_path": "",
+            #             "prompt":
+            #                 "Please pinpoint 3 points on the target "
+            #                     "object. Return a list of (x,y) normalized "
+            #                     "between 0 and 1.",
+            #             }
+            #         sock.send_json(req)
+            #         rep = sock.recv_json()
+            #         ref_pts_norm = rep["points"][: self._num_object_points]
+
+            #         # 存到 PointsClass
+            #         pix_pts = [
+            #             [0.0, *self._norm2pix(pt, width, height)[::-1]]
+            #             for pt in ref_pts_norm
+            #         ]
+            #         tensor = torch.tensor(pix_pts, dtype=torch.float32)
+            #         self._points_class.semantic_similar_points[
+            #             f"{ref_pk}_{self._des_object}"
+            #         ] = tensor
+
+            #         # 留给下一个分支使用
+            #         self._ref_image_b64 = serialize_image(image_rgb)
+            #         self._ref_pts_norm  = ref_pts_norm
+
+            #     # ------ 2) MASt3R on other cameras ------
+            #     else:
+            #         sock = self._get_socket("mast3r")
+            #         image_rgb = Image.fromarray(obs[pixel_key][..., ::-1])
+            #         req = {
+            #             "ref_image":   self._ref_image_b64,
+            #             "target_image": serialize_image(image_rgb),
+            #             "points":       self._ref_pts_norm,
+            #         }
+            #         sock.send_json(req)
+            #         rep = sock.recv_json()
+            #         tgt_pts_norm = rep["target_points"][: self._num_object_points]
+
+            #         h, w = image_rgb.size[1], image_rgb.size[0]
+            #         pix_pts = [
+            #             [0.0, *self._norm2pix(pt, w, h)[::-1]]
+            #             for pt in tgt_pts_norm
+            #         ]
+            #         tensor = torch.tensor(pix_pts, dtype=torch.float32)
+            #         self._points_class.semantic_similar_points[
+            #             f"{pixel_key}_{self._des_object}"
+            #         ] = tensor
+
+            #     self._points_class.add_to_image_list(
+            #         obs[pixel_key][:, :, ::-1], pixel_key
+            #     )                
+            if self._use_pin_points:
+                # 1) 选 reference 相机
+                ref_pk  = self._pixel_keys[0]
+                height, width = obs[ref_pk].shape[:2]
+
+                # ---------- A) 参考相机：RoboPoint ----------
+                if pixel_key == ref_pk:
+                    sock = self._get_socket("robopoint")
+                    img  = Image.fromarray(obs[ref_pk][..., ::-1])
+                    sock.send_json({
+                        "image":  serialize_image(img),
+                        "image_path": "",
+                        "prompt": "Please pinpoint 3 points on the empty space under the bottle so bottle can be placed. Return a list of (x,y) normalized "
+                    })
+                    rep = sock.recv_json()
+                    ref_pts_norm = rep["points"][: self._num_object_points]   # (N,2)
+                    print(f"Pin-pointed {ref_pts_norm} on {ref_pk}")
+                    # import ipdb; ipdb.set_trace()
+                    # # CURRENT HACK TO BYPASS ROBOPOINT
+                    # ref_pts_norm = [[0.4, 0.8593758]]
+
+                    # # 记录给其它相机用
+                    # self._ref_image_b64 = serialize_image(img)
+                    # self._ref_pts_norm  = ref_pts_norm
+                    # 用当前相机的尺寸，保持 (x,y) 顺序，不要 [::-1]
+                    # import ipdb; ipdb.set_trace()
+                    h, w = obs[ref_pk].shape[:2]              # numpy: (H,W,3)
+                    pix_pts = [list(self._norm2pix(pt, w, h)) for pt in ref_pts_norm]  # [[x,y]]
+
+                    self._ref_image_b64 = serialize_image(img)
+                    self._ref_pts_norm  = ref_pts_norm
+
+                    # 转成像素坐标
+                    # pix_pts = [[0.0, *self._norm2pix(pt, width, height)[::-1]]
+                    #         for pt in ref_pts_norm]
+                    # import ipdb; ipdb.set_trace()
+                    # pix_pts = [list(self._norm2pix(pt, width, height)[::-1])
+                    #            for pt in ref_pts_norm]             # [[x, y]]
+
+                # ---------- B) 其它相机：MASt3R ----------
+                else:
+                    sock = self._get_socket("mast3r")
+                    img  = Image.fromarray(obs[pixel_key][..., ::-1])
+                    # convert self._ref_pts_norm to pixel coordinates
+                    pixel_coords = [
+                        self._norm2pix(pt, width, height) for pt in self._ref_pts_norm
+                    ]
+                    sock.send_json({
+                        "ref_image":    self._ref_image_b64,
+                        "target_image": serialize_image(img),
+                        "ref_points":      pixel_coords,  # (N,2)
+                    })
+                    rep = sock.recv_json()
+                    tgt_pts = rep["target_points"][: self._num_object_points]
+                    # convert to normalized coordinates
+                    tgt_pts_norm = [
+                        [pt[0] / width, pt[1] / height] for pt in tgt_pts
+                    ]  # (N,2)
+                    # # HACK
+                    # tgt_pts_norm = [[0.27, 0.81]]
+
+                    # import ipdb; ipdb.set_trace()
+
+                    # import ipdb; ipdb.set_trace()
+
+                    # h, w = img.size[1], img.size[0]
+                    # # pix_pts = [[0.0, *self._norm2pix(pt, w, h)[::-1]]
+                    # #         for pt in tgt_pts_norm]
+                    # pix_pts = [list(self._norm2pix(pt, width, height)[::-1])
+                    #            for pt in ref_pts_norm]             # [[x, y]]
+
+                    # 用“目标相机”的尺寸，换算“目标相机”的点；不要 [::-1]
+                    h, w = obs[pixel_key].shape[:2]
+                    pix_pts = [list(self._norm2pix(pt, w, h)) for pt in tgt_pts_norm]  # [[x,y]]
+
+                # === 关键：直接 append 到轨迹 ===
+                # import ipdb; ipdb.set_trace()
+                object_pts = torch.tensor(pix_pts, dtype=torch.float32)[None]   # shape (1,N,D)
+                points.append(object_pts)                                       # <<<<<<<<
+            elif self._use_object_points:
                 # start server
                 context = zmq.Context()
                 socket = context.socket(zmq.REQ)
@@ -575,6 +877,16 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 self._points_class.plot_image(pixel_key)
 
             self._track_pts[pixel_key] = torch.cat(points, dim=1)[0].numpy()
+
+            # for debugging
+            # import ipdb; ipdb.set_trace()
+            R_const = self.robot_base_orientation                        
+            R_runtime = R.from_quat(self._current_pose[3:7]).as_matrix()
+
+            delta = R_const.T @ R_runtime
+            print("ΔEuler runtime (deg):",
+                R.from_matrix(delta).as_euler('xyz', degrees=True))
+
 
     def point2action(self, action):
         """
@@ -647,6 +959,27 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         target_orientation = R.from_matrix(target_orientation).as_quat()
 
         return np.concatenate([target_position, target_orientation, gripper])
+    
+    # ---------------------------  helpers  --------------------------------
+    def _get_socket(self, name: str):
+        if name == "robopoint":
+            if self._robopoint_sock is None:
+                self._robopoint_sock = self._zmq_ctx.socket(zmq.REQ)
+                self._robopoint_sock.connect(self._robopoint_addr)
+            return self._robopoint_sock
+        elif name == "mast3r":
+            if self._mast3r_sock is None:
+                self._mast3r_sock = self._zmq_ctx.socket(zmq.REQ)
+                self._mast3r_sock.connect(self._mast3r_addr)
+            return self._mast3r_sock
+        else:
+            raise ValueError(name)
+
+    @staticmethod
+    def _norm2pix(pt_norm, width, height):
+        x_n, y_n = pt_norm
+        return int(x_n * width), int(y_n * height)
+
 
     def __getattr__(self, name):
         return getattr(self._env, name)
@@ -818,7 +1151,8 @@ def make(
     use_gt_depth,
     use_depth_anything,  # NEW parameter passed through make()
     point_dim,
-    reset_flag=True
+    reset_flag=True,
+    use_pin_points=False
 ):
     env = gym.make(
         "Franka-v1",
@@ -848,7 +1182,8 @@ def make(
         use_gt_depth=use_gt_depth,
         use_depth_anything=use_depth_anything,  # pass new flag to wrapper
         point_dim=point_dim,
-        reset_flag=reset_flag
+        reset_flag=reset_flag,
+        use_pin_points=use_pin_points,
     )
     env = ActionDTypeWrapper(env, np.float32)
     env = ActionRepeatWrapper(env, action_repeat)
