@@ -182,7 +182,8 @@ TASK_MODELS = {
 }
 
 
-def launch_eval(task_name: str, model_path: str, hand: str, des_object: str, use_object_point=True):
+# def launch_eval(task_name: str, model_path: str, hand: str, des_object: str, use_object_point=True):
+def launch_eval(task_name: str, model_path: str, hand: str, des_objects: str, use_object_point=True):
     """Spawn `eval_point_track.py` with the correct flags/env."""
     if use_object_point:
         use_object = "true"
@@ -263,8 +264,14 @@ def launch_eval(task_name: str, model_path: str, hand: str, des_object: str, use
                 f"bc_weight={model_path}",
             ]
 
-    # env = {**os.environ, "HAND": hand}  # also expose via env var
-    env = {**os.environ, "HAND": hand, "DES_OBJECT": des_object} 
+    # # env = {**os.environ, "HAND": hand}  # also expose via env var
+    # env = {**os.environ, "HAND": hand, "DES_OBJECT": des_object} 
+    env = {
+        **os.environ,
+        "HAND": hand,
+        "DES_OBJECT": des_objects,   # backward-compat
+        "DES_OBJECTS": des_objects,  # multi-object aware
+    }
     print("Launching eval with command:\n  " + " ".join(cmd))
     return subprocess.Popen(cmd, env=env)
 
@@ -311,7 +318,11 @@ def main():
     eval_process: subprocess.Popen | None = None
 
     print("Task Manager Initialized")
-    print("Enter '<task_name>,<desired_object>' to start evaluation, 'stop' to terminate the ongoing evaluation, or 'reset' (TODO).\n")
+    # print("Enter '<task_name>,<desired_object>' to start evaluation, 'stop' to terminate the ongoing evaluation, or 'reset' (TODO).\n")
+    print("Enter '<task_name>,<desired_object(s)>' to start evaluation, 'stop' to terminate the ongoing evaluation, or 'reset,<left|right>'.")
+    print("Examples:")
+    print("  place_bottle_into_basket_left_robot, orange bottle, blue basket")
+    print('  place_bottle_into_basket_left_robot, ["orange bottle","blue basket"]\n')
 
     while True:
         try:
@@ -368,10 +379,12 @@ def main():
 
         # ───────────────────────── parse task + desired object ─────────────────────
         if "," not in user_input:
-            print("Input should be '<task_name>,<desired_object>'. Try again.")
+            # print("Input should be '<task_name>,<desired_object>'. Try again.")
+            print("Input should be '<task_name>,<desired_object(s)>'. Try again.")
             continue
 
-        task_name, des_object = [p.strip() for p in user_input.split(",", 1)]
+        # task_name, des_object = [p.strip() for p in user_input.split(",", 1)]
+        task_name, des_objects = [p.strip() for p in user_input.split(",", 1)]
 
         if task_name not in TASK_MODELS:
             print(f"Unknown task name: '{task_name}'. Available: {', '.join(TASK_MODELS)}")
@@ -380,6 +393,10 @@ def main():
         model_path = TASK_MODELS[task_name]["model"]
         hand = TASK_MODELS[task_name]["hand"]
         use_object = TASK_MODELS[task_name]["use_object_point"]
+
+        if use_object and not des_objects:
+            print("This task uses object points. Please provide desired_object(s) after the comma.")
+            continue
 
         if not Path(model_path).exists():
             print(f"Model file not found: {model_path}")
@@ -393,7 +410,8 @@ def main():
             print("Previous evaluation process terminated.")
 
         # Launch new evaluation.
-        eval_process = launch_eval(task_name, model_path, hand, des_object, use_object)
+        # eval_process = launch_eval(task_name, model_path, hand, des_object, use_object)
+        eval_process = launch_eval(task_name, model_path, hand, des_objects, use_object)
 
 
 if __name__ == "__main__":

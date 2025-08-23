@@ -7,6 +7,8 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
+from pathlib import Path
+
 from point_utils.correspondence import Correspondence
 from point_utils.depth import Depth
 
@@ -58,56 +60,260 @@ class PointsClass:
         else:
             self.detect_hand = False
 
-        # Set up the correspondence model and find the expert image features
-        self.correspondence_model = Correspondence(
-            device,
-            dift_path,
-            width,
-            height,
-            image_size_multiplier,
-            ensemble_size,
-            dift_layer,
-            dift_steps,
-        )
+        # # Set up the correspondence model and find the expert image features
+        # self.correspondence_model = Correspondence(
+        #     device,
+        #     dift_path,
+        #     width,
+        #     height,
+        #     image_size_multiplier,
+        #     ensemble_size,
+        #     dift_layer,
+        #     dift_steps,
+        # )
+
+        # ---------------------------------------------------------------
+        # 改动点 1：为每个 object_label 单独实例化一个 Correspondence
+        # ---------------------------------------------------------------
+        self.correspondence_models: dict[str, Correspondence] = {}
+        for _obj in (self.object_labels or []):
+            if _obj in ("human_hand", "empty_space"):
+                continue
+            self.correspondence_models[_obj] = Correspondence(
+                device,
+                dift_path,
+                width,
+                height,
+                image_size_multiplier,
+                ensemble_size,
+                dift_layer,
+                dift_steps,
+            )
+
+        # import ipdb; ipdb.set_trace()
 
         self.initial_coords, self.expert_correspondence_features = {}, {}
 
-        for pixel_key in self.pixel_keys:
-            # If the only object label is "empty_space", create a blank expert image.
-            if self.object_labels == ["empty_space"] or len(self.object_labels) == 0:
-                expert_image = Image.new("RGB", (224, 224), (0, 0, 0))  # black blank image
-            else:
-                expert_image = Image.open(
-                    "%s/coordinates/%s/images/%s.png" % (root_dir, task_name, pixel_key)
-                ).convert("RGB")
+        # -------- 新：全局共享目录（所有 task 共用） --------
+        objects_dir = Path(root_dir) / "coordinates" / "objects"
+        # -------- 旧：按 task 的回退目录 --------
+        images_dir  = Path(root_dir) / "coordinates" / task_name / "images"
+        coords_dir  = Path(root_dir) / "coordinates" / task_name / "coords"
 
-            if len(self.object_labels) > 0:
-                for object_label in self.object_labels:
-                    key = f"{pixel_key}_{object_label}"
-                    if object_label == "empty_space":
-                        # Skip loading coordinates and computing expert features.
-                        # The semantic_similar_points for empty_space will be set externally.
-                        self.initial_coords[key] = np.array([
-                            [0.0, 0.0, 0.0],
-                            [0.0, 0.0, 0.0],
-                        ])
-                        continue
-                    else:
-                        self.initial_coords[key] = np.array(
-                            pickle.load(
-                                open(
-                                    "%s/coordinates/%s/coords/%s_%s.pkl"
-                                    % (root_dir, task_name, pixel_key, object_label),
-                                    "rb",
-                                )
-                            )
+        def _pick_first(*cands: Path):
+            for p in cands:
+                if p.exists():
+                    return p
+            return None
+        
+        # def _harmonize_coords_to_image(expert_img: Image.Image, coords_arr: np.ndarray) -> np.ndarray:
+        #     img_h, img_w = expert_img.size  # PIL: (W, H)
+        #     coords = np.array(coords_arr, dtype=np.float32).copy()  # [N, 3] -> [layer, y, x]
+        #     y, x = coords[:, 1], coords[:, 2]
+
+        #     # 1) 如果是归一化坐标 [0,1]，映射到像素
+        #     if (y.min() >= -1e-6 and y.max() <= 1.01) and (x.min() >= -1e-6 and x.max() <= 1.01):
+        #         y = y * (img_h - 1)
+        #         x = x * (img_w - 1)
+
+        #     # 2) 如果明显大于图像尺寸（来自另一个分辨率的像素标注），按最大值等比缩回图像范围
+        #     if y.max() >= img_h or x.max() >= img_w:
+        #         # 等比各向缩放到当前 expert_img 边界内
+        #         scale_y = (img_h - 1e-6) / max(y.max(), 1e-6)
+        #         scale_x = (img_w - 1e-6) / max(x.max(), 1e-6)
+        #         y = y * scale_y
+        #         x = x * scale_x
+
+        #     # 3) 最后裁剪 & 取整到像素索引
+        #     y = np.clip(np.round(y), 0, img_h - 1)
+        #     x = np.clip(np.round(x), 0, img_w - 1)
+
+        #     coords[:, 1] = y
+        #     coords[:, 2] = x
+        #     return coords
+
+
+
+        # 预读共享 objects（若任何对象缺文件，则整体回退旧结构）
+        use_shared = objects_dir.exists()
+        shared_imgs: dict[str, Image.Image] = {}
+        shared_coords: dict[str, np.ndarray] = {}
+        if use_shared and (self.object_labels or []):
+            for obj in self.object_labels:
+                if obj in ("empty_space", "human_hand"):
+                    continue
+                img_p = _pick_first(
+                    objects_dir / f"{obj}.png",
+                    objects_dir / f"{obj}.jpg",
+                    objects_dir / f"{obj}.jpeg",
+                )
+                pkl_p = objects_dir / f"{obj}.pkl"
+                if img_p is None or (not pkl_p.exists()):
+                    use_shared = False
+                    break
+                shared_imgs[obj]   = Image.open(img_p).convert("RGB")
+                shared_coords[obj] = np.array(pickle.load(open(pkl_p, "rb")))
+
+        # 为每个 pixel_key × object_label 建 key
+        for pixel_key in self.pixel_keys:
+            default_img = Image.new("RGB", (224, 224), (0, 0, 0))
+            for object_label in (self.object_labels or []):
+                key = f"{pixel_key}_{object_label}"
+
+                if object_label == "human_hand":
+                    continue  # 由 MediaPipe 处理
+                if object_label == "empty_space":
+                    self.initial_coords[key] = np.array([[0.0, 0.0, 0.0],
+                                                         [0.0, 0.0, 0.0]])
+                    continue
+
+                # ① 优先：全局共享 objects/
+                if use_shared and (object_label in shared_imgs):
+                    coords_arr = shared_coords[object_label]
+                    expert_img = shared_imgs[object_label]
+                else:
+                    # ② 回退：老结构（每相机一张图/坐标）
+                    img_p = _pick_first(
+                        images_dir / f"{pixel_key}.png",
+                        images_dir / f"{pixel_key}.jpg",
+                        images_dir / f"{pixel_key}.jpeg",
+                    )
+                    expert_img = Image.open(img_p).convert("RGB") if img_p else default_img
+                    pkl_p = coords_dir / f"{pixel_key}_{object_label}.pkl"
+                    if not pkl_p.exists():
+                        raise FileNotFoundError(
+                            f"Missing coords: {pkl_p} (and objects/{object_label}.pkl not found)"
                         )
-                        # import ipdb; ipdb.set_trace()
-                        with torch.no_grad():
-                            self.expert_correspondence_features[key] = \
-                                self.correspondence_model.set_expert_correspondence(
-                                    expert_image, pixel_key, object_label
-                                )
+                    coords_arr = np.array(pickle.load(open(pkl_p, "rb")))
+
+                # coords = _harmonize_coords_to_image(expert_img, coords_arr)
+                self.initial_coords[key] = coords_arr
+
+                # -------------------------------------------------------
+                # 改动点 2：调用每个对象自己的 Correspondence 实例
+                # 并存储独立副本，避免后续被覆盖
+                # -------------------------------------------------------
+                if object_label not in ("human_hand", "empty_space"):
+                    with torch.no_grad():
+                        feat = self.correspondence_models[object_label] \
+                            .set_expert_correspondence(
+                                expert_img, pixel_key, object_label
+                            )
+                    self.expert_correspondence_features[key] = feat.detach().clone()
+
+                # import ipdb; ipdb.set_trace()
+
+                # with torch.no_grad():
+                #     # self.expert_correspondence_features[key] = (
+                #     #     self.correspondence_model.set_expert_correspondence(
+                #     #         expert_img, pixel_key, object_label
+                #     #     )
+                #     # )
+                #     feat = self.correspondence_model.set_expert_correspondence(
+                #         expert_img, pixel_key, object_label
+                #     )
+                #     # save expert_img
+                #     # create path if not exists
+                #     import os
+                #     os.makedirs("expert_images", exist_ok=True)
+                #     expert_img.save(f"expert_images/{pixel_key}_{object_label}.png")
+                #     print(f"expert_images/{pixel_key}_{object_label}.png saved.")
+                #     print(self.expert_correspondence_features[key].shape)
+
+                # self.expert_correspondence_features[key] = feat.detach().clone()
+                # import ipdb; ipdb.set_trace()
+
+
+                # self.initial_coords[key] = coords_arr
+# #                 ipdb> coords_arr
+# # array([[  0.        , 102.01612707,  89.41602476],
+# #        [  0.        , 181.98924371,  69.0865715 ],
+# #        [  0.        ,  98.65591208, 155.61275686],
+# #        [  0.        , 174.93279224, 134.44324355]])
+#                 with torch.no_grad():
+#                     self.expert_correspondence_features[key] = (
+#                         self.correspondence_model.set_expert_correspondence(
+#                             expert_img, pixel_key, object_label
+#                         )
+#                     )
+#                     # import ipdb; ipdb.set_trace()
+#                     # 假设就在 PointsClass.__init__ 内、紧跟 set_expert_correspondence 之后
+#                     eft = self.expert_correspondence_features[key]   # src_ft: [1, C, H, W] 通常
+#                     # ipdb> eft.shape
+#                     # torch.Size([1, 1280, 11, 13])
+#                     H, W = int(eft.shape[-2]), int(eft.shape[-1])    # 特征图尺寸
+#                     # ipdb> H, W
+#                     # (11, 13)
+#                     img_w, img_h = expert_img.size                   # 参考图像尺寸（注意 PIL 是 (W,H)）
+#                     # ipdb> expert_img.size
+#                     # (200, 179)
+
+#                     coords = np.array(coords_arr, dtype=np.float32).copy()  # [N, 3] => [layer, y, x]
+
+#                     # 如果坐标是归一化 [0,1]，映射到特征图；如果是像素坐标，按参考图→特征图线性缩放
+#                     y = coords[:, 1]
+#                     x = coords[:, 2]
+#                     if (0.0 <= y).all() and (y <= 1.01).all() and (0.0 <= x).all() and (x <= 1.01).all():
+#                         y = y * H
+#                         x = x * W
+#                     else:
+#                         # 像素坐标 -> 特征图坐标
+#                         y = y * (H / max(1, img_h))
+#                         x = x * (W / max(1, img_w))
+
+#                     # 最后做一次健壮性截断与取整（避免 200 这样的上边界越界）
+#                     y = np.clip(np.round(y), 0, H - 1)
+#                     x = np.clip(np.round(x), 0, W - 1)
+
+#                     coords[:, 1] = y
+#                     coords[:, 2] = x
+#                     # ipdb> coords
+#                     # np.array([[ 0.,  6.,  6.],
+#                     #     [ 0., 10.,  4.],
+#                     #     [ 0.,  6., 10.],
+#                     #     [ 0., 10.,  9.]], dtype=float32)
+
+#                     self.initial_coords[key] = coords
+
+
+        # self.initial_coords, self.expert_correspondence_features = {}, {}
+
+        # for pixel_key in self.pixel_keys:
+        #     # If the only object label is "empty_space", create a blank expert image.
+        #     if self.object_labels == ["empty_space"] or len(self.object_labels) == 0:
+        #         expert_image = Image.new("RGB", (224, 224), (0, 0, 0))  # black blank image
+        #     else:
+        #         expert_image = Image.open(
+        #             "%s/coordinates/%s/images/%s.png" % (root_dir, task_name, pixel_key)
+        #         ).convert("RGB")
+
+        #     if len(self.object_labels) > 0:
+        #         for object_label in self.object_labels:
+        #             key = f"{pixel_key}_{object_label}"
+        #             if object_label == "empty_space":
+        #                 # Skip loading coordinates and computing expert features.
+        #                 # The semantic_similar_points for empty_space will be set externally.
+        #                 self.initial_coords[key] = np.array([
+        #                     [0.0, 0.0, 0.0],
+        #                     [0.0, 0.0, 0.0],
+        #                 ])
+        #                 continue
+        #             else:
+        #                 self.initial_coords[key] = np.array(
+        #                     pickle.load(
+        #                         open(
+        #                             "%s/coordinates/%s/coords/%s_%s.pkl"
+        #                             % (root_dir, task_name, pixel_key, object_label),
+        #                             "rb",
+        #                         )
+        #                     )
+        #                 )
+        #                 # import ipdb; ipdb.set_trace()
+        #                 with torch.no_grad():
+        #                     self.expert_correspondence_features[key] = \
+        #                         self.correspondence_model.set_expert_correspondence(
+        #                             expert_image, pixel_key, object_label
+        #                         )
 
         # Initialize semantic similar points for every (pixel_key, object_label) combination.
         # For 'empty_space', this remains None (or can be set externally later).
@@ -152,6 +358,7 @@ class PointsClass:
             self.num_points = num_points
 
         self.device = device
+        # import ipdb; ipdb.set_trace()
 
         # in case image is cropped and resized
         self.original_image_size = None
@@ -223,15 +430,41 @@ class PointsClass:
             return
 
         key = f"{pixel_key}_{object_label}"
-        self.semantic_similar_points[key] = self.correspondence_model.find_correspondence(
-            self.expert_correspondence_features[key],
-            self.image_list[pixel_key][0, -1],
-            self.initial_coords[key],
-            pixel_key,
-            object_label,
-            object_bbox,
+
+        # ---------------------------------------------------------------
+        # 改动点 3：按 object_label 取对应的模型来做匹配
+        # ---------------------------------------------------------------
+        corr = self.correspondence_models.get(object_label, None)
+        if corr is None:
+            # human_hand / empty_space 已在前面 return；若出现缺模型的 label，直接跳过更安全
+            return
+        self.semantic_similar_points[key] = corr.find_correspondence(
+                self.expert_correspondence_features[key],
+                self.image_list[pixel_key][0, -1],
+                self.initial_coords[key],
+                pixel_key,
+                object_label,
+                object_bbox,
         )
 
+        # import ipdb; ipdb.set_trace()
+#         self.semantic_similar_points[key] = self.correspondence_model.find_correspondence(
+#             self.expert_correspondence_features[key],
+#             self.image_list[pixel_key][0, -1],
+#             self.initial_coords[key],
+#             pixel_key,
+#             object_label,
+#             object_bbox,
+#         )
+# #         ipdb> self.expert_correspondence_features['pixels4_oven'].shape
+# # torch.Size([1, 1280, 11, 13])
+# # self.expert_correspondence_features['pixels4_bowl'].shape
+# # torch.Size([1, 1280, 11, 13])
+
+# # self.expert_correspondence_features['pixels4_oven'].shape
+# # torch.Size([1, 1280, 6, 7])
+# # ipdb> self.expert_correspondence_features['pixels4_bowl'].shape
+# # torch.Size([1, 1280, 6, 7])
     def get_depth(self, pixel_key, original_image_size=None, current_image_size=None, crop_ratios=None, last_n_frames=1):
         """
         Get the depth map for the current image using Depth Anything. Depth is height x width.
@@ -347,6 +580,7 @@ class PointsClass:
                     .unsqueeze(0),
                     is_first_step=True,
                     add_support_grid=True,
+                    # add_support_grid=False,
                     queries=semantic_similar_points[None].to(self.device),
                 )
                 self.tracks[pixel_key] = semantic_similar_points
@@ -356,6 +590,7 @@ class PointsClass:
                 )
                 # Remove the support points
                 tracks = tracks[:, :, 0 : self.num_points, :]
+                # import ipdb; ipdb.set_trace()
 
                 if self.detect_hand:
                     self.hand_tracks[pixel_key] = self.hand_tracks[pixel_key].to(

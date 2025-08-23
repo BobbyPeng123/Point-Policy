@@ -1,3 +1,4 @@
+from curses import raw
 from typing import Any, NamedTuple
 
 import gym
@@ -7,6 +8,9 @@ import franka_env
 import dm_env
 import numpy as np
 from dm_env import StepType, specs, TimeStep
+
+import re
+import json
 
 import os
 import cv2
@@ -34,6 +38,32 @@ def serialize_image(image):
     return base64.b64encode(image_bytes).decode('utf-8')
 
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
+
+def _parse_desired_objects(raw: str | None, fallback: list[str] | None = None) -> list[str]:
+    """
+    支持以下形式：
+      - "orange bottle, blue basket"
+      - "orange bottle; blue basket"
+      - "orange bottle and blue basket"
+      - '["orange bottle","blue basket"]'
+    返回去重且去空白的列表；若为空则回退到 fallback。
+    """
+    if not raw:
+        return fallback or []
+    raw = raw.strip()
+    # 尝试 JSON 列表
+    try:
+        val = json.loads(raw)
+        if isinstance(val, list):
+            out = [str(x).strip() for x in val if str(x).strip()]
+            return list(dict.fromkeys(out))
+    except Exception:
+        pass
+    # 统一把 " and " 替换成逗号，然后按常见分隔符切
+    raw = re.sub(r"\band\b", ",", raw, flags=re.I)
+    parts = re.split(r"[;,/|]+", raw)
+    out = [p.strip() for p in parts if p.strip()]
+    return list(dict.fromkeys(out)) or (fallback or [])
 
 
 class RGBArrayAsObservationWrapper(dm_env.Environment):
@@ -114,14 +144,26 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             # init points class if using object points
             from point_utils.points_class import PointsClass
 
+            # points_cfg["task_name"] = task_name
+            # points_cfg["pixel_keys"] = self._pixel_keys
+            # points_cfg["object_labels"] = object_labels
+            # self._points_class = PointsClass(**points_cfg)
+            # self._des_object = os.environ.get("DES_OBJECT",
+            #                       self._object_labels[0]
+            #                       if self._object_labels else "")
+            # print(f'we are using {self._des_object} as the desired object')
             points_cfg["task_name"] = task_name
             points_cfg["pixel_keys"] = self._pixel_keys
-            points_cfg["object_labels"] = object_labels
+
+            # 读取多目标（优先 DES_OBJECTS；否则 DES_OBJECT；否则构造函数传入的 object_labels）
+            env_des_raw = os.environ.get("DES_OBJECTS") or os.environ.get("DES_OBJECT") or ""
+            self._object_labels = _parse_desired_objects(env_des_raw, fallback=list(object_labels) if object_labels else [])
+            if not self._object_labels:
+                raise ValueError("No desired objects provided (DES_OBJECTS/DES_OBJECT/object_labels empty).")
+            points_cfg["object_labels"] = self._object_labels
+
             self._points_class = PointsClass(**points_cfg)
-            self._des_object = os.environ.get("DES_OBJECT",
-                                  self._object_labels[0]
-                                  if self._object_labels else "")
-            print(f'we are using {self._des_object} as the desired object')
+            print(f"[points] desired objects: {self._object_labels}")
 
         # calibration data
         assert calib_path is not None
@@ -849,13 +891,21 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
                 self._points_class.reset_episode()
                 self._points_class.add_to_image_list(frame[:, :, ::-1], pixel_key)
-                for object_label in self._object_labels:
+                # for object_label in self._object_labels:
+                #     request = {
+                #         "image": serialized_image,
+                #         "image_path": "",
+                #         # "query": f"Get the bounding box of the {object_label} in the image",
+                #         # "query": f"Get the bounding box of the bottle in the image",
+                #         "query": f"Get the bounding box of the {self._des_object} in the image",
+                #     }
+                # 逐个目标请求 bbox 并建点
+                wanted_labels = self._object_labels
+                for object_label in wanted_labels:
                     request = {
                         "image": serialized_image,
                         "image_path": "",
-                        # "query": f"Get the bounding box of the {object_label} in the image",
-                        # "query": f"Get the bounding box of the bottle in the image",
-                        "query": f"Get the bounding box of the {self._des_object} in the image",
+                        "query": f"Get the bounding box of the {object_label} in the image",
                     }
                     socket.send_json(request)
                     response = socket.recv_json()

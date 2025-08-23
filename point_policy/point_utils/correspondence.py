@@ -134,7 +134,7 @@ class Correspondence:
                 x, y = int(coord[1] * self.width / self.original_size[0]), int(
                     coord[2] * self.height / self.original_size[1]
                 )
-
+                # import ipdb; ipdb.set_trace()
                 src_vec = src_ft[0, :, y, x].view(1, num_channel).clone()
                 trg_ft = torch.nn.Upsample(
                     size=(self.height, self.width), mode="bilinear", align_corners=True

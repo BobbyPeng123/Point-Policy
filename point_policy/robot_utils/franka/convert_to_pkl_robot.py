@@ -71,7 +71,10 @@ original_img_size = (640, 480)
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 save_img_size = (256, 256)
 object_labels = [
-    "bottle",
+    # "bottle",
+    "oven",
+    # "bowl",
+    
 ]
 
 PROCESSED_DATA_PATH = Path(DATA_DIR) / "processed_data"
@@ -351,21 +354,25 @@ for TASK_NAME in task_names:
 
                 # get bbox of object
                 for object_label in object_labels:
-                    request = {
-                        "image": serialized_image,
-                        "image_path": "",
-                        "query": f"Get the bounding box of the {object_label} in the image, you can directly use dino_object_detection to get the bbox, the bottle is guaranteed to be in the image.",  
-                    }
-                    socket.send_json(request)
-                    response = socket.recv_json()
-                    bbox = response["result"]
-                    bbox = bbox[:-1] if len(bbox) == 5 else bbox
-                    # make sure bbox is a list of int
-                    bbox = [int(x) for x in bbox]
+                    if object_label != 'oven':
+                        request = {
+                            "image": serialized_image,
+                            "image_path": "",
+                            "query": f"Get the bounding box of the {object_label} in the image, you can directly use dino_object_detection to get the bbox, the bottle is guaranteed to be in the image.",  
+                        }
+                        socket.send_json(request)
+                        response = socket.recv_json()
+                        bbox = response["result"]
+                        bbox = bbox[:-1] if len(bbox) == 5 else bbox
+                        # make sure bbox is a list of int
+                        bbox = [int(x) for x in bbox]
+                    elif object_label == 'oven':
+                        bbox = [120, 94, 207, 179] if pixel_key == 'pixels4' else [100, 114, 185, 200]
                     print(f"bbox: {bbox}")
                     print(f"bbox type: {type(bbox)}")
 
                     points_class.add_to_image_list(frames[0], pixel_key)
+                    # import ipdb; ipdb.set_trace()
                     points_class.find_semantic_similar_points(
                         pixel_key, object_label, bbox
                     )

@@ -272,7 +272,13 @@ class ChainEvalFranka:
             *extra,
         ]
 
-        env = {**os.environ, "HAND": hand, "DES_OBJECT": obj}
+        # env = {**os.environ, "HAND": hand, "DES_OBJECT": obj}
+        env = {
+            **os.environ,
+            "HAND": hand,
+            "DES_OBJECT": obj,
+            "DES_OBJECTS": obj,  # 支持 "orange bottle, blue basket" / "A; B" / '["A","B"]'
+        }
         print("[→] Launching eval:\n  " + " ".join(cmd))
         self.eval_proc = subprocess.Popen(cmd, env=env)
 
