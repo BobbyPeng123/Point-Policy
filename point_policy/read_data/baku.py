@@ -135,7 +135,8 @@ class BCDataset(IterableDataset):
                 # absolute actions
                 actions = np.concatenate(
                     [
-                        observations[i]["human_poses"],
+                        # observations[i]["human_poses"],
+                        observations[i]["cmd_cartesian_states"],
                         observations[i]["gripper_states"][:, None],
                     ],
                     axis=1,
@@ -169,6 +170,10 @@ class BCDataset(IterableDataset):
                     rot = matrix_to_rotation_6d(rot)
                     actions = np.concatenate([pos, rot], axis=-1)
                     actions = np.concatenate([actions, gripper], axis=-1)
+
+                assert observations[i]["cmd_cartesian_states"].shape[0] == observations[i]["gripper_states"].shape[0]
+                aa = observations[i]["cmd_cartesian_states"][:, 3:6]
+                assert np.isfinite(aa).all() and np.abs(aa).max() < 10
 
                 # Convert cartesian states to quaternion orientation
                 observations[i]["cartesian_states"] = get_quaternion_orientation(

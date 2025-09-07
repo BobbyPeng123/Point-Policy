@@ -42,7 +42,9 @@ cam_indices = {
     # 3: "rgb",
     4: "rgb",
     # 5: "rgb",
-    6: "rgb",
+    # 6: "rgb",
+    7: "rgb",
+    # 8: "rgb",
     # 51: "rgb",
 }
 states_file_name = "states"

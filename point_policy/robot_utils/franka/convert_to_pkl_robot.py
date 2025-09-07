@@ -47,7 +47,7 @@ parser.add_argument(
     "--num_demos", type=int, default=None, help="Number of demonstrations to process"
 )
 parser.add_argument(
-    "--process_points", type=bool, default=True, help="Process human hand points"
+    "--process_points", type=bool, default=False, help="Process human hand points"
 )
 parser.add_argument(
     "--use_gt_depth", type=bool, default=False, help="Use ground truth depth"
@@ -65,17 +65,25 @@ use_depth_anything = False
 # import ipdb; ipdb.set_trace()
 
 # camera_indices = [1, 2]
-camera_indices = [4, 6]
+camera_indices = [4, 7]
 # camera_indices = [2, 5]
 original_img_size = (640, 480)
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 save_img_size = (256, 256)
 object_labels = [
-    # "bottle",
-    "oven",
+    # # "bottle",
     # "bowl",
-    
+    # "target_bowl",
+    # # "oven",
+    # 'plate',
+    'cup',
+    'basket'
 ]
+
+# wanted_labels = [
+#     "blue bowl(not light blue, very blue)",
+#     "bowl that is not blue",
+# ]
 
 PROCESSED_DATA_PATH = Path(DATA_DIR) / "processed_data"
 SAVE_DATA_PATH = Path(DATA_DIR) / "expert_demos" / "franka_env"
@@ -243,6 +251,7 @@ for TASK_NAME in task_names:
         cmd_gripper_states = state["cmd_gripper_state"].values.astype(np.float32)
         observation["cmd_cartesian_states"] = cmd_cartesian_states.astype(np.float32)
         observation["cmd_gripper_states"] = cmd_gripper_states.astype(np.float32)
+        # observation["human_poses"] = observation["cmd_cartesian_states"]
         # import ipdb; ipdb.set_trace()
 
         if process_points:
@@ -353,12 +362,16 @@ for TASK_NAME in task_names:
                 # serialized_image = serialize_image(image)
 
                 # get bbox of object
+                i = 0
                 for object_label in object_labels:
-                    if object_label != 'oven':
+                    # wanted_label = wanted_labels[i]
+                    # i += 1
+                    if object_label != 'oven' and object_label != 'basket':
                         request = {
                             "image": serialized_image,
                             "image_path": "",
-                            "query": f"Get the bounding box of the {object_label} in the image, you can directly use dino_object_detection to get the bbox, the bottle is guaranteed to be in the image.",  
+                            "query": f"Get the one bounding box of the {object_label} in the image, you can directly use dino_object_detection to get the bbox, the object is guaranteed to be in the image and there's only one of it.",
+                            # "query": f"Get the one bounding box of the {wanted_label} in the image, you can directly use dino_object_detection to get the bbox, the object is guaranteed to be in the image and there's only one of it.",
                         }
                         socket.send_json(request)
                         response = socket.recv_json()
@@ -368,6 +381,10 @@ for TASK_NAME in task_names:
                         bbox = [int(x) for x in bbox]
                     elif object_label == 'oven':
                         bbox = [120, 94, 207, 179] if pixel_key == 'pixels4' else [100, 114, 185, 200]
+                    elif object_label == 'basket':
+                        bbox = [129, 110, 205, 184] if pixel_key == 'pixels4' else [110, 130, 183, 206]
+                    # elif object_label == 'basket':
+                    #     bbox = [29, 130, 108, 229] if pixel_key == 'pixels4' else [12, 152, 90, 253]
                     print(f"bbox: {bbox}")
                     print(f"bbox type: {type(bbox)}")
 
@@ -540,7 +557,8 @@ for TASK_NAME in task_names:
             max_gripper = np.maximum(max_gripper, np.max(gripper_states))
             min_gripper = np.minimum(min_gripper, np.min(gripper_states))
 
-        if not use_gt_depth:
+        # if not use_gt_depth:
+        if process_points and not use_gt_depth:
             """
             Triangulate 3D points from 2D points when gt_depth is not available
             """

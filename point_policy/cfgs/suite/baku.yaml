@@ -33,7 +33,8 @@ eval_history_len: 10
 action_after_steps: 1
 
 # obs_keys
-pixel_keys: ["pixels1", "pixels2"]
+pixel_keys: ["pixels4", "pixels7"]
+# pixel_keys: ["pixels2", "pixels5"]
 proprio_key: "proprioceptive"
 feature_key: "features"
 

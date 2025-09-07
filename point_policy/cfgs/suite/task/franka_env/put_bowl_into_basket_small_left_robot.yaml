@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+
+task_name: put_bowl_into_basket_small_left_robot
+object_labels: []
+num_object_points: 0

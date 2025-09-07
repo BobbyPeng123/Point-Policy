@@ -1,0 +1,8 @@
+defaults:
+  - _self_
+
+task_name: stack_bowl_left_robot
+# object_labels: [bottle, basket]
+object_labels: [bowl, target_bowl]
+# object_labels: [bowl, oven]
+num_object_points: 4

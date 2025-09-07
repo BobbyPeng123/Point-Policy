@@ -11,7 +11,7 @@ outside the current working directory.
 
 # ---------------- User parameters ----------------
 DATA_DIR   = Path("/home/bobby/data/expert_demos/franka_env")
-TASK_NAME  = "put_bowl_into_oven_left_robot"  # e.g. "pick_bottle_from_the_fridge_left_robot"
+TASK_NAME  = "put_cup_into_basket_left_robot"  # e.g. "pick_bottle_from_the_fridge_left_robot"
 PLOT_PTS   = True
 PIXEL_KEYS = ["pixels4", "pixels6"]
 ORIG_SIZE  = (640, 480)  # original frame resolution used during demo collection
@@ -67,6 +67,9 @@ for t_idx in TRAJ_IDX:
             # import ipdb; ipdb.set_trace()
             robot_tr  = np.asarray(obs[tracks_key])  # (T, N_r, 2)
             obj_tr    = np.asarray(obs[object_key])  # maybe (0, 0, 2)
+            # import ipdb; ipdb.set_trace()
+            # only save the fitst four object points
+            # obj_tr = obj_tr[:, :4]
             obj_tr    = ensure_frame_len(obj_tr, T)
             pts_all   = np.concatenate([robot_tr, obj_tr], axis=1)
             # pts_all = robot_tr

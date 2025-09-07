@@ -522,6 +522,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         # 1) 环境执行一步
         # ------------------------------------------------------------------
         self._step += 1
+        import ipdb; ipdb.set_trace()
 
         robot_action = self.point2action(action)
         print("Robot action:", robot_action)
@@ -606,51 +607,51 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
         self.observation = observation
 
-        # # ==================================================================
-        # # 6) DEBUG 可视化 —— 把 3-D 点重新投影到各相机
-        # # ==================================================================
-        # import cv2
-        # from pathlib import Path
-        # debug_dir = Path("debug_imgs")
-        # debug_dir.mkdir(exist_ok=True)
+        # ==================================================================
+        # 6) DEBUG 可视化 —— 把 3-D 点重新投影到各相机
+        # ==================================================================
+        import cv2
+        from pathlib import Path
+        debug_dir = Path("debug_imgs")
+        debug_dir.mkdir(exist_ok=True)
 
-        # for pk in self._pixel_keys:
-        #     img = self.observation[pk].copy()
-        #     pts3d = self.observation[f"point_tracks_{pk}"]
+        for pk in self._pixel_keys:
+            img = self.observation[pk].copy()
+            pts3d = self.observation[f"point_tracks_{pk}"]
 
-        #     # 只在已经是 3-D 时可视化
-        #     if pts3d.ndim != 2 or pts3d.shape[1] != 3:
-        #         continue
+            # 只在已经是 3-D 时可视化
+            if pts3d.ndim != 2 or pts3d.shape[1] != 3:
+                continue
 
-        #     cam = pixelkey2camera[pk]
+            cam = pixelkey2camera[pk]
 
-        #     # —— 修 正 处 —— 直接使用外参，不再重复乘 K
-        #     extr = self.calibration_data[cam]["ext"]     # 4×4, world → cam
-        #     R_wc = extr[:3, :3]
-        #     t_wc = extr[:3, 3]
-        #     rvec, _ = cv2.Rodrigues(R_wc)
+            # —— 修 正 处 —— 直接使用外参，不再重复乘 K
+            extr = self.calibration_data[cam]["ext"]     # 4×4, world → cam
+            R_wc = extr[:3, :3]
+            t_wc = extr[:3, 3]
+            rvec, _ = cv2.Rodrigues(R_wc)
 
-        #     K = self.calibration_data[cam]["int"]        # 内参
-        #     D = np.zeros(5)                              # 若有畸变可替换
+            K = self.calibration_data[cam]["int"]        # 内参
+            D = np.zeros(5)                              # 若有畸变可替换
 
-        #     pts2d, _ = cv2.projectPoints(
-        #         pts3d.astype(np.float32), rvec, t_wc, K, D
-        #     )
-        #     pts2d = pts2d[:, 0]
+            pts2d, _ = cv2.projectPoints(
+                pts3d.astype(np.float32), rvec, t_wc, K, D
+            )
+            pts2d = pts2d[:, 0]
 
-        #     print(f"[{pk}] x {pts2d[:,0].min():.1f}~{pts2d[:,0].max():.1f}, "
-        #         f"y {pts2d[:,1].min():.1f}~{pts2d[:,1].max():.1f}")
+            print(f"[{pk}] x {pts2d[:,0].min():.1f}~{pts2d[:,0].max():.1f}, "
+                f"y {pts2d[:,1].min():.1f}~{pts2d[:,1].max():.1f}")
 
-        #     for x_f, y_f in pts2d:
-        #         x, y = int(round(x_f)), int(round(y_f))
-        #         if 0 <= x < img.shape[1] and 0 <= y < img.shape[0]:
-        #             cv2.circle(img, (x, y), 6, (0, 0, 255), -1)   # 红点
-        #         else:
-        #             print(f"⚠️  {pk} 投影点 ({x_f:.1f},{y_f:.1f}) 越界，已跳过")
+            for x_f, y_f in pts2d:
+                x, y = int(round(x_f)), int(round(y_f))
+                if 0 <= x < img.shape[1] and 0 <= y < img.shape[0]:
+                    cv2.circle(img, (x, y), 6, (0, 0, 255), -1)   # 红点
+                else:
+                    print(f"⚠️  {pk} 投影点 ({x_f:.1f},{y_f:.1f}) 越界，已跳过")
 
-        #     cv2.imwrite(str(debug_dir / f"step{self._step:04d}_{pk}.png"), img)
+            cv2.imwrite(str(debug_dir / f"step{self._step:04d}_{pk}.png"), img)
 
-        # import ipdb; ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         # ==================================================================
 
         # ------------------------------------------------------------------
@@ -900,19 +901,29 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 #         "query": f"Get the bounding box of the {self._des_object} in the image",
                 #     }
                 # 逐个目标请求 bbox 并建点
-                wanted_labels = self._object_labels
+                # wanted_labels = self._object_labels
+                # wanted_labels = ['bowl', "basket"]
+                wanted_labels = ['plate']
+                # wanted_labels = ['blue bowl(very blue, not light blue)', 'bowl that is not blue']
+                label_flag = True
                 for object_label in wanted_labels:
                     request = {
                         "image": serialized_image,
                         "image_path": "",
                         "query": f"Get the bounding box of the {object_label} in the image",
                     }
+                    # if object_label == wanted_labels[0]: object_label = 'bowl'
+                    if 'stack' in self._task_name:
+                        object_label = 'bowl' if label_flag else 'target_bowl'
+                        label_flag = not label_flag
                     socket.send_json(request)
                     response = socket.recv_json()
                     bbox = response["result"]
                     bbox = bbox[:-1] if len(bbox) == 5 else bbox
                     # make sure bbox is a list of int
                     bbox = [int(x) for x in bbox]
+                    # elif object_label == 'oven':
+                    #     bbox = [120, 94, 207, 179] if pixel_key == 'pixels4' else [100, 114, 185, 200]
                     print(f"bbox: {bbox}")
                     print(f"bbox type: {type(bbox)}")
                     self._points_class.find_semantic_similar_points(

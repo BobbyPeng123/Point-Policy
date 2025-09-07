@@ -142,6 +142,8 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             gripper = self.prev_gripper_state
         self.prev_gripper_state = gripper
 
+        import ipdb; ipdb.set_trace()
+
         # Convert action to quarternion before sending.
         # Incoming action is in the rotation 6D format.
         pos, rot = action[:3], action[3:9]

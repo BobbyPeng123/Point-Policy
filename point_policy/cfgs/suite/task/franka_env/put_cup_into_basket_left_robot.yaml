@@ -1,0 +1,8 @@
+defaults:
+  - _self_
+
+task_name: put_cup_into_basket_left_robot
+# object_labels: [bottle, basket]
+object_labels: [cup, basket]
+# object_labels: [bowl, oven]
+num_object_points: 8

@@ -1,0 +1,8 @@
+defaults:
+  - _self_
+
+task_name: pick_plate_from_rack_left_robot
+# object_labels: [bottle, basket]
+object_labels: [plate]
+# object_labels: [bowl, oven]
+num_object_points: 5
