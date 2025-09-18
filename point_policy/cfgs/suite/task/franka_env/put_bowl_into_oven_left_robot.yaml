@@ -3,6 +3,6 @@ defaults:
 
 task_name: put_bowl_into_oven_left_robot
 # object_labels: [bottle, basket]
-object_labels: [bowl]
-# object_labels: [bowl, oven]
-num_object_points: 2
+# object_labels: [bowl]
+object_labels: [bowl, oven]
+num_object_points: 6

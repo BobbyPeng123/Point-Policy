@@ -47,7 +47,7 @@ parser.add_argument(
     "--num_demos", type=int, default=None, help="Number of demonstrations to process"
 )
 parser.add_argument(
-    "--process_points", type=bool, default=False, help="Process human hand points"
+    "--process_points", type=bool, default=True, help="Process human hand points"
 )
 parser.add_argument(
     "--use_gt_depth", type=bool, default=False, help="Use ground truth depth"
@@ -65,19 +65,21 @@ use_depth_anything = False
 # import ipdb; ipdb.set_trace()
 
 # camera_indices = [1, 2]
-camera_indices = [4, 7]
+camera_indices = [4, 6]
 # camera_indices = [2, 5]
 original_img_size = (640, 480)
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 save_img_size = (256, 256)
 object_labels = [
+    # "bread",
     # # "bottle",
     # "bowl",
     # "target_bowl",
-    # # "oven",
+    # "oven",
     # 'plate',
-    'cup',
-    'basket'
+    # 'cup',
+    # 'basket'
+    'plate',
 ]
 
 # wanted_labels = [
@@ -366,7 +368,8 @@ for TASK_NAME in task_names:
                 for object_label in object_labels:
                     # wanted_label = wanted_labels[i]
                     # i += 1
-                    if object_label != 'oven' and object_label != 'basket':
+                    # if object_label != 'oven' and object_label != 'basket':
+                    if object_label != 'basket':
                         request = {
                             "image": serialized_image,
                             "image_path": "",
@@ -379,8 +382,8 @@ for TASK_NAME in task_names:
                         bbox = bbox[:-1] if len(bbox) == 5 else bbox
                         # make sure bbox is a list of int
                         bbox = [int(x) for x in bbox]
-                    elif object_label == 'oven':
-                        bbox = [120, 94, 207, 179] if pixel_key == 'pixels4' else [100, 114, 185, 200]
+                    # elif object_label == 'oven':
+                    #     bbox = [120, 94, 207, 179] if pixel_key == 'pixels4' else [100, 114, 185, 200]
                     elif object_label == 'basket':
                         bbox = [129, 110, 205, 184] if pixel_key == 'pixels4' else [110, 130, 183, 206]
                     # elif object_label == 'basket':

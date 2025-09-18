@@ -1,0 +1,8 @@
+defaults:
+  - _self_
+
+task_name: pick_bread_to_bowl_left_robot
+# object_labels: [bottle, basket]
+# object_labels: [bowl]
+object_labels: [bread, bowl]
+num_object_points: 4

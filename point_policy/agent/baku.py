@@ -341,7 +341,7 @@ class BCAgent:
             actions_for_curr_step = self.all_time_actions[:, step]
             actions_populated = torch.all(actions_for_curr_step != 0, axis=1)
             actions_for_curr_step = actions_for_curr_step[actions_populated]
-            k = 0.01
+            k = 0.001
             exp_weights = np.exp(-k * np.arange(len(actions_for_curr_step)))
             exp_weights = exp_weights / exp_weights.sum()
             exp_weights = torch.from_numpy(exp_weights).to(self.device).unsqueeze(dim=1)
@@ -353,6 +353,11 @@ class BCAgent:
             if norm_stats is not None:
                 return post_process(action.cpu().numpy()[0, -1])
             return action.cpu().numpy()[0, -1, :]
+
+        # action = action.view(-1, self.num_queries, self._act_dim)
+        # if norm_stats is not None:
+        #     return post_process["actions"](action.cpu().numpy()[-1])
+        # return action.cpu().numpy()[-1]
 
     def update(self, expert_replay_iter, step):
         metrics = dict()

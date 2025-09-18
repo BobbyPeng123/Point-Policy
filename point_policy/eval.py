@@ -21,7 +21,7 @@ from video import VideoRecorder
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 torch.backends.cudnn.benchmark = True
 
-hand = "right"                       # default
+hand = "left"                       # default
 for arg in sys.argv:
     if arg.startswith("--hand="):
         hand = arg.split("=", 1)[1]

@@ -116,6 +116,30 @@ TASK_MODELS: Dict[str, Dict[str, object]] = {
         "use_object_point": True,
         "reset_flag": True,
     },
+    "put_bowl_into_oven_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.09.10/point_policy/deterministic/190412_hidden_dim_256/snapshot/20000.pt",
+        "hand": "left",
+        "use_object_point": True,
+        "reset_flag": True,
+    },
+    "close_oven_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.09.10/point_policy/deterministic/163533_hidden_dim_256/snapshot/15000.pt",
+        "hand": "left",
+        "use_object_point": True,
+        "reset_flag": True,
+    },
+    "put_bowl_into_basket_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.24/point_policy/deterministic/165331_hidden_dim_256/snapshot/20000.pt",
+        "hand": "left",
+        "use_object_point": True,
+        "reset_flag": True,
+    },
+    "pick_bread_to_bowl_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.09.12/point_policy/deterministic/211940_hidden_dim_256/snapshot/20000.pt",
+        "hand": "left",
+        "use_object_point": True,
+        "reset_flag": True,
+    },
 }
 
 # ─────────────────────────── Helpers ────────────────────────────────────────
@@ -151,6 +175,12 @@ def _parse_task(raw: str) -> Tuple[str, str]:
             task = "place_bottle_from_the_fridge_left_robot"
         
         PLACING_LEFT_FLAG = not PLACING_LEFT_FLAG
+    elif "bread" in task:
+        task = "pick_bread_to_bowl_left_robot"
+    elif "put_bowl_into_oven" in task:
+        task = "put_bowl_into_oven_left_robot"
+    elif "close_oven" in task:
+        task = "close_oven_left_robot"
 
     return task, obj
 
@@ -169,10 +199,43 @@ class ChainEvalFranka:
         self.task_complete = True
         self.current_task = ""
         self.current_des_obj = ""
-        self.max_judge_rounds = 6  # max rounds of judging before giving up
+        self.max_judge_rounds = 10  # max rounds of judging before giving up
         self.judge_rounds = 0  # current round of judging
         # ── NEW: Judge not before ──
         self.judge_not_before: float = 0.0
+
+        # ─────────── replay helper (special case for close_oven_left_robot) ─────
+    def _start_policy(self, task: str):
+        """
+        Launch a fixed demonstration replay instead of the learned policy.
+        """
+        if task == "close_oven_left_robot":
+            cmd = [
+                "python",
+                "/home/bobby/Point-Policy/Franka-Teach/replay_given_state.py",
+                "--file",
+                "/home/bobby/data/processed_data/close_oven_left_robot/demonstration_0/states.csv",
+        ]
+        elif task == "put_cup_into_basket_left_robot":
+            cmd = [
+                "python",
+                "/home/bobby/Point-Policy/Franka-Teach/replay_given_state.py",
+                "--file",
+                "/home/bobby/data/processed_data/put_cup_into_basket_left_robot/demonstration_9/states.csv", # 9 for  right, 0 for left, 58 for front middle, 7 middle
+        ]
+        elif task == "pick_plate_from_rack_left_robot":
+            cmd = [
+                "python",
+                "/home/bobby/Point-Policy/Franka-Teach/replay_given_state.py",
+                "--file",
+                "/home/bobby/data/processed_data/pick_plate_from_rack_left_robot/demonstration_2/states.csv", # right, 32 for middle, 10 for left
+            ]
+        # print("[→] Launching replay:\n  " + " ".join(cmd))
+        # Run from the Franka-Teach repo so relative imports work, if any
+        self.eval_proc = subprocess.Popen(cmd, cwd="/home/bobby/Point-Policy/Franka-Teach")
+        # Replays typically spin up quickly; allow judge after a short delay
+        self.judge_not_before = time.time() + 8
+        print("[→] Judge will start after 8s (replay mode).")
 
     # ───────────── ZMQ ─────────────
     def _rpc(self, query: str, images: List[str]):
@@ -317,21 +380,52 @@ class ChainEvalFranka:
                     print(f"[!] Unknown task '{task}'. Available: {', '.join(TASK_MODELS)}")
                     continue
 
-                model, hand, use_obj_pt, reset_flag = cfg["model"], cfg["hand"], cfg["use_object_point"], cfg["reset_flag"]  # type: ignore[index]
+                # model, hand, use_obj_pt, reset_flag = cfg["model"], cfg["hand"], cfg["use_object_point"], cfg["reset_flag"]  # type: ignore[index]
 
-                if not Path(model).exists():
-                    print(f"[!] Checkpoint missing: {model}")
-                    continue
+                # if not Path(model).exists():
+                #     print(f"[!] Checkpoint missing: {model}")
+                #     continue
 
-                # launch / switch policy
-                self._stop_eval()
-                self._start_eval(task, model, hand, des_obj, use_obj_pt, reset_flag, use_pin_pt=cfg.get("use_pin_point", False))
+                # # launch / switch policy
+                # self._stop_eval()
+                # self._start_eval(task, model, hand, des_obj, use_obj_pt, reset_flag, use_pin_pt=cfg.get("use_pin_point", False))
+
+                # ── SPECIAL CASE: close_oven_left_robot → run Franka-Teach replay ──
+                if task == "close_oven_left_robot" or task == "put_cup_into_basket_left_robot" or task == "pick_plate_from_rack_left_robot":
+                    self._stop_eval()
+                    time.sleep(20)
+                    self._start_policy(task)
+                else:
+                    model, hand, use_obj_pt, reset_flag = (
+                        cfg["model"],
+                        cfg["hand"],
+                        cfg["use_object_point"],
+                        cfg["reset_flag"],
+                    )  # type: ignore[index]
+                    if not Path(model).exists():
+                        print(f"[!] Checkpoint missing: {model}")
+                        continue
+                    # launch / switch policy
+                    self._stop_eval()
+                    self._start_eval(
+                        task,
+                        model,
+                        hand,
+                        des_obj,
+                        use_obj_pt,
+                        reset_flag,
+                        use_pin_pt=cfg.get("use_pin_point", False),
+                    )
 
                 self.current_task = task
                 self.current_des_obj = des_obj
                 self.judge_rounds = 0
                 self.task_complete = False
-                print(f"[→] >>> New task: {task}, object: {des_obj} <<<")
+                # print(f"[→] >>> New task: {task}, object: {des_obj} <<<")
+                if task == "close_oven_left_robot":
+                    print(f"[→] >>> New task (REPLAY): {task} <<<")
+                else:
+                    print(f"[→] >>> New task: {task}, object: {des_obj} <<<")
 
             # ── Judge loop ──
             tick = 0
@@ -353,12 +447,17 @@ class ChainEvalFranka:
                         self.task_complete = True
                         self._stop_eval()
                         # ── NEW: if we just opened the fridge with the right arm, reset it now ──
-                        if "open_fridge_door" in self.current_task and "right" in self.current_task:
+                        if ("open_fridge_door" in self.current_task and "right" in self.current_task):
                             print("[→] Resetting robot (right arm) after opening fridge door…")
                             time.sleep(5)  # wait a bit before resetting
                             self._reset_robot("right")
                             print("[✓] Robot reset complete.")
                         # ──────────────────────────────────────────────────────────────────────
+                        elif ("put_bowl_into_oven" in self.current_task) or ("put_bowl_into_basket" in self.current_task) or ("pick_bread_to_bowl" in self.current_task) or ("put_cup_into_basket" in self.current_task):
+                            print("[→] Resetting robot (left arm)")
+                            time.sleep(5)  # wait a bit before resetting
+                            self._reset_robot("left")
+                            print("[✓] Robot reset complete.")
                         break
                     else:
                         self.judge_rounds += 1
@@ -385,15 +484,21 @@ class ChainEvalFranka:
 # ─────────────────────────── CLI ────────────────────────────────────────────
 def _parse_args():
     ap = argparse.ArgumentParser(description="Chain‑eval manager (Robot task prompt protocol)")
-    ap.add_argument("--prompt", type=str, default="Get the bottle with Korean letters on it and coke bottle out from fridge",
-                    help="High‑level prompt for the robot task")
+    # ap.add_argument("--prompt", type=str, default="Get the bottle with Korean letters on it and coke bottle out from fridge",
+    #                 help="High‑level prompt for the robot task")
     # ap.add_argument("--prompt", type=str, default="Get purple bottle from the side door of the fridge",
     #                 help="High‑level prompt for the robot task")
     # ap.add_argument("--prompt", type=str, default="Get the orange bottle and green bottle out from fridge, and get pink bottle from the side door of the fridge",
     #                 help="High‑level prompt for the robot task")
     # ap.add_argument("--prompt", type=str, default="Get the orange bottle and green bottle out from fridge",
     #                 help="High‑level prompt for the robot task")
-    ap.add_argument("--cam_ids", type=int, nargs="+", default=[5, 6], help="Camera IDs (default: 6)")
+    # ap.add_argument("--prompt", type=str, default="Get the orange bottle out from fridge(no need to open it first)",
+    #                 help="High‑level prompt for the robot task")
+    # ap.add_argument("--prompt", type=str, default="Clean up the table and place the plate on table",
+    #                 help="High‑level prompt for the robot task")
+    ap.add_argument("--prompt", type=str, default="Bake the round bagel in the oven",
+                    help="High‑level prompt for the robot task")
+    ap.add_argument("--cam_ids", type=int, nargs="+", default=[6], help="Camera IDs (default: 6)")
     ap.add_argument("--server", default=SERVER_ADDR, help="ZMQ server address")
     return ap.parse_args()
 

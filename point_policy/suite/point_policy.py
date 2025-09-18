@@ -31,6 +31,8 @@ import base64
 from PIL import Image
 from pathlib import Path
 
+from itertools import zip_longest
+
 def serialize_image(image):
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
@@ -157,13 +159,16 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
             # 读取多目标（优先 DES_OBJECTS；否则 DES_OBJECT；否则构造函数传入的 object_labels）
             env_des_raw = os.environ.get("DES_OBJECTS") or os.environ.get("DES_OBJECT") or ""
-            self._object_labels = _parse_desired_objects(env_des_raw, fallback=list(object_labels) if object_labels else [])
-            if not self._object_labels:
+            self._wanted_objects = _parse_desired_objects(env_des_raw, fallback=list(object_labels) if object_labels else [])
+            if not self._wanted_objects:
                 raise ValueError("No desired objects provided (DES_OBJECTS/DES_OBJECT/object_labels empty).")
-            points_cfg["object_labels"] = self._object_labels
+            # points_cfg["object_labels"] = self._object_lab
+            self._object_labels = object_labels
+            points_cfg["object_labels"] = object_labels
+            print(object_labels)
 
             self._points_class = PointsClass(**points_cfg)
-            print(f"[points] desired objects: {self._object_labels}")
+            print(f"[points] desired objects: {self._wanted_objects}")
 
         # calibration data
         assert calib_path is not None
@@ -522,7 +527,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         # 1) 环境执行一步
         # ------------------------------------------------------------------
         self._step += 1
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
 
         robot_action = self.point2action(action)
         print("Robot action:", robot_action)
@@ -651,7 +656,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
 
             cv2.imwrite(str(debug_dir / f"step{self._step:04d}_{pk}.png"), img)
 
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
         # ==================================================================
 
         # ------------------------------------------------------------------
@@ -901,29 +906,46 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
                 #         "query": f"Get the bounding box of the {self._des_object} in the image",
                 #     }
                 # 逐个目标请求 bbox 并建点
-                # wanted_labels = self._object_labels
+                wanted_labels = self._wanted_objects
                 # wanted_labels = ['bowl', "basket"]
-                wanted_labels = ['plate']
+                # wanted_labels = ['bowl', 'oven']
+                # wanted_labels = ['bread', 'bowl']
+                # wanted_labels = ['croissant', 'bowl']
+                # wanted_labels = ['round bagel(or round donut), dont want it if not round, if you cannot find it try deep search', 'bowl']
+                # wanted_labels = ['oven(I want the oven not the oven door)']
+                # wanted_labels = ['plate']
                 # wanted_labels = ['blue bowl(very blue, not light blue)', 'bowl that is not blue']
+                # wanted_labels = ['bottle']
+                # wanted_labels = ['red bowl', 'basket']
                 label_flag = True
-                for object_label in wanted_labels:
+                # for object_label in wanted_labels:
+                for object_label, wanted_label in zip_longest(self._object_labels, wanted_labels):
+                    if wanted_label is None:
+                        wanted_label = object_label
+                    print(f"Finding {wanted_label} in {pixel_key}...")
                     request = {
                         "image": serialized_image,
                         "image_path": "",
-                        "query": f"Get the bounding box of the {object_label} in the image",
+                        "query": f"Get the bounding box of the {wanted_label} in the image",
                     }
                     # if object_label == wanted_labels[0]: object_label = 'bowl'
                     if 'stack' in self._task_name:
                         object_label = 'bowl' if label_flag else 'target_bowl'
                         label_flag = not label_flag
-                    socket.send_json(request)
-                    response = socket.recv_json()
-                    bbox = response["result"]
-                    bbox = bbox[:-1] if len(bbox) == 5 else bbox
-                    # make sure bbox is a list of int
-                    bbox = [int(x) for x in bbox]
-                    # elif object_label == 'oven':
-                    #     bbox = [120, 94, 207, 179] if pixel_key == 'pixels4' else [100, 114, 185, 200]
+
+                    if object_label == 'oven':
+                        bbox = [355, 177, 540, 337] if pixel_key == 'pixels4' else [307, 216, 483, 375]
+                        import time
+                        time.sleep(6)
+                    elif object_label == 'basket':
+                        bbox = [329, 206, 519, 346] if pixel_key == 'pixels4' else [283, 244, 463, 387]
+                    else:
+                        socket.send_json(request)
+                        response = socket.recv_json()
+                        bbox = response["result"]
+                        bbox = bbox[:-1] if len(bbox) == 5 else bbox
+                        # make sure bbox is a list of int
+                        bbox = [int(x) for x in bbox]
                     print(f"bbox: {bbox}")
                     print(f"bbox type: {type(bbox)}")
                     self._points_class.find_semantic_similar_points(

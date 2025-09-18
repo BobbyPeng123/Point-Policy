@@ -100,13 +100,13 @@ TASK_MODELS: Dict[str, Dict[str, Any]] = {
     },
     # new env policies:
     "put_bowl_into_oven_left_robot": {
-        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.23/point_policy/deterministic/000516_hidden_dim_256/snapshot/10000.pt",
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.09.10/point_policy/deterministic/190412_hidden_dim_256/snapshot/20000.pt",
         "hand": "left",
         "use_object_point": True,
         "reset_flag": True,
     },
     "close_oven_left_robot": {
-        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.23/point_policy/deterministic/002001_hidden_dim_256/snapshot/5000.pt",
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.09.10/point_policy/deterministic/163533_hidden_dim_256/snapshot/15000.pt",
         "hand": "left",
         "use_object_point": True,
         "reset_flag": True,
@@ -123,7 +123,30 @@ TASK_MODELS: Dict[str, Dict[str, Any]] = {
         "use_object_point": True,
         "reset_flag": True,
     },
-    
+    "pick_bread_to_bowl_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.09.12/point_policy/deterministic/211940_hidden_dim_256/snapshot/20000.pt",
+        "hand": "left",
+        "use_object_point": True,
+        "reset_flag": True,
+    },
+    "pick_plate_from_rack_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.09.13/point_policy/deterministic/103950_hidden_dim_256/snapshot/20000.pt",
+        "hand": "left",
+        "use_object_point": True,
+        "reset_flag": True,
+    },
+    "place_plate_from_rack_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.09.13/point_policy/deterministic/231114_hidden_dim_256/snapshot/10000.pt",
+        "hand": "left",
+        "use_object_point": False,
+        "reset_flag": False,
+    },
+    "put_bowl_into_basket_left_robot": {
+        "model": "/home/bobby/Point-Policy/point_policy/exp_local/2025.08.24/point_policy/deterministic/165331_hidden_dim_256/snapshot/20000.pt",
+        "hand": "left",
+        "use_object_point": True,
+        "reset_flag": True,
+    },
 }
 
 def _pixel_keys_and_calib(hand: str) -> tuple[str, str]:

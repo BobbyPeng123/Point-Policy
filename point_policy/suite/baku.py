@@ -142,7 +142,7 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
             gripper = self.prev_gripper_state
         self.prev_gripper_state = gripper
 
-        import ipdb; ipdb.set_trace()
+        # import ipdb; ipdb.set_trace()
 
         # Convert action to quarternion before sending.
         # Incoming action is in the rotation 6D format.
@@ -194,6 +194,100 @@ class RGBArrayAsObservationWrapper(dm_env.Environment):
         observation["features"] = obs["features"]
         observation["goal_achieved"] = done
         return observation, reward, done, info
+
+    # def step(self, action):
+    #     """
+    #     Accepts either a single action (shape [A]) or a sequence of actions
+    #     (shape [K, A] or list of arrays). Executes them one by one, summing
+    #     rewards and stopping on `done` or when max_episode_len is reached.
+    #     """
+    #     def _apply_one(a):
+    #         # --- gripper hysteresis ---
+    #         gripper = a[-1]
+    #         if self.prev_gripper_state == -1 and gripper > -0.3:
+    #             gripper = 1
+    #         elif self.prev_gripper_state == 1 and gripper < 0.6:
+    #             gripper = -1
+    #         else:
+    #             gripper = self.prev_gripper_state
+    #         self.prev_gripper_state = gripper
+
+    #         # --- convert 6D rot to quaternion ---
+    #         pos, rot = a[:3], a[3:9]
+    #         rot = rotation_6d_to_matrix(rot)
+    #         rot = R.from_matrix(rot).as_quat()
+    #         a = np.concatenate([pos, rot, [gripper]])
+
+    #         # --- delta mode (use current pose + delta) ---
+    #         if self.action_type == "delta":
+    #             current_state = self.get_state()
+    #             pos_curr = current_state.pos
+    #             ori_curr = current_state.quat
+    #             r_curr = R.from_quat(ori_curr).as_matrix()
+    #             matrix_curr = np.eye(4)
+    #             matrix_curr[:3, :3] = r_curr
+    #             matrix_curr[:3, 3] = pos_curr
+
+    #             pos_delta = a[:3]
+    #             # NOTE: if your delta orientation truly comes in 6D, adjust this.
+    #             # This assumes a rotation *vector* for delta is in a[3:6].
+    #             ori_delta = a[3:6]
+    #             r_delta = R.from_rotvec(ori_delta).as_matrix()
+    #             matrix_delta = np.eye(4)
+    #             matrix_delta[:3, :3] = r_delta
+    #             matrix_delta[:3, 3] = pos_delta
+
+    #             matrix_desired = matrix_curr @ matrix_delta
+    #             pos_desired = pos_curr + pos_delta
+    #             r_desired = matrix_desired[:3, :3]
+    #             ori_desired = R.from_matrix(r_desired).as_quat()
+    #             desired_cartesian_pose = np.concatenate([pos_desired, ori_desired])
+
+    #             a = np.concatenate([desired_cartesian_pose, a[6:]])
+
+    #         # one low-level env step
+    #         self._step += 1
+    #         return self._env.step(a)
+
+    #     # Handle single action vs. sequence of actions
+    #     is_seq = isinstance(action, (list, tuple, np.ndarray)) and np.asarray(action).ndim == 2
+
+    #     total_reward = 0.0
+    #     done = False
+    #     info = {}
+    #     last_obs = None
+
+    #     if is_seq:
+    #         for action_i in np.asarray(action):
+    #             obs, r, done, info = _apply_one(action_i)
+    #             total_reward += float(r)
+    #             last_obs = obs
+    #             if done or self._step >= self._max_episode_len:
+    #                 break
+    #         reward = total_reward
+    #         obs = last_obs
+    #     else:
+    #         obs, reward, done, info = _apply_one(action)
+
+    #     # augment features from Franka state
+    #     franka_state = self.get_state()
+    #     obs["features"] = np.concatenate(
+    #         (franka_state.pos, franka_state.quat, [franka_state.gripper])
+    #     )
+
+    #     # build observation dict as before
+    #     observation = {}
+    #     for key in self.pixel_keys:
+    #         observation[key] = obs[key]
+    #         if self._use_gt_depth:
+    #             depth_key = f"depth_{key}"
+    #             observation[depth_key] = obs[depth_key]
+    #     observation["proprioceptive"] = obs["features"]
+    #     observation["features"] = obs["features"]
+    #     observation["goal_achieved"] = done
+
+    #     return observation, reward, done, info
+
 
     def observation_spec(self):
         return self._obs_spec

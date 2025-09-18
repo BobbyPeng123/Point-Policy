@@ -74,7 +74,7 @@ USE_DEPTH_ANYTHING = False
 #                     Global parameters
 # =============================================================
 
-camera_indices = [2, 5]
+camera_indices = [4, 6]
 original_img_size = (640, 480)
 crop_h, crop_w = (0.0, 1.0), (0.0, 1.0)
 save_img_size = (256, 256)

@@ -11,7 +11,7 @@ outside the current working directory.
 
 # ---------------- User parameters ----------------
 DATA_DIR   = Path("/home/bobby/data/expert_demos/franka_env")
-TASK_NAME  = "put_cup_into_basket_left_robot"  # e.g. "pick_bottle_from_the_fridge_left_robot"
+TASK_NAME  = "pick_plate_from_rack_left_robot"  # e.g. "pick_bottle_from_the_fridge_left_robot"
 PLOT_PTS   = True
 PIXEL_KEYS = ["pixels4", "pixels6"]
 ORIG_SIZE  = (640, 480)  # original frame resolution used during demo collection

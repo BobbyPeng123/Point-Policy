@@ -57,9 +57,12 @@ class FrankaEnv(gym.Env):
         )
 
         if self.use_robot:
-            self.cam_ids = [2,5]
+            # self.cam_ids = [2,5]
             # self.cam_ids = [2,4,5,6] ####################################################
             # self.cam_ids = [4,6]
+            # self.cam_ids = [4, 6, 7]
+            # self.cam_ids = [2, 4, 5, 6, 7]
+            self.cam_ids = [2, 4, 5, 6]  ####################################################
             self.image_subscribers = {}
             if self.use_gt_depth:
                 self.depth_subscribers = {}
@@ -206,6 +209,7 @@ class FrankaEnv(gym.Env):
 
                 image_list[cam_idx] = image
             print("image gotten")
+            # import ipdb; ipdb.set_trace()
 
             if self.use_gt_depth:
                 depth_list = {}
