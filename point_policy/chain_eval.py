@@ -204,39 +204,6 @@ class ChainEvalFranka:
         # ── NEW: Judge not before ──
         self.judge_not_before: float = 0.0
 
-        # ─────────── replay helper (special case for close_oven_left_robot) ─────
-    def _start_policy(self, task: str):
-        """
-        Launch a fixed demonstration replay instead of the learned policy.
-        """
-        if task == "close_oven_left_robot":
-            cmd = [
-                "python",
-                "/home/bobby/Point-Policy/Franka-Teach/replay_given_state.py",
-                "--file",
-                "/home/bobby/data/processed_data/close_oven_left_robot/demonstration_0/states.csv",
-        ]
-        elif task == "put_cup_into_basket_left_robot":
-            cmd = [
-                "python",
-                "/home/bobby/Point-Policy/Franka-Teach/replay_given_state.py",
-                "--file",
-                "/home/bobby/data/processed_data/put_cup_into_basket_left_robot/demonstration_9/states.csv", # 9 for  right, 0 for left, 58 for front middle, 7 middle
-        ]
-        elif task == "pick_plate_from_rack_left_robot":
-            cmd = [
-                "python",
-                "/home/bobby/Point-Policy/Franka-Teach/replay_given_state.py",
-                "--file",
-                "/home/bobby/data/processed_data/pick_plate_from_rack_left_robot/demonstration_2/states.csv", # right, 32 for middle, 10 for left
-            ]
-        # print("[→] Launching replay:\n  " + " ".join(cmd))
-        # Run from the Franka-Teach repo so relative imports work, if any
-        self.eval_proc = subprocess.Popen(cmd, cwd="/home/bobby/Point-Policy/Franka-Teach")
-        # Replays typically spin up quickly; allow judge after a short delay
-        self.judge_not_before = time.time() + 8
-        print("[→] Judge will start after 8s (replay mode).")
-
     # ───────────── ZMQ ─────────────
     def _rpc(self, query: str, images: List[str]):
         self.sock.send_json({"image": images, "image_path": "", "query": query})
@@ -298,15 +265,6 @@ class ChainEvalFranka:
             extra.append("suite.num_object_points=1")
 
         print(f"extra: {extra}, use_obj_pt: {use_obj_pt}, use_pin_pt: {use_pin_pt}")
-        # exit()
-        # extra = []
-        # if use_pin_pt:
-        #     if use_obj_pt:
-        #         extra = ["suite.task_make_fn.points_cfg=null"]
-        # else:
-        #     if not use_obj_pt:
-        #         extra = ["suite.task_make_fn.points_cfg=null"]
-        # extra = [] if use_obj_pt else ["suite.task_make_fn.points_cfg=null"]
 
         if hand == "left":
             pixel_keys = "[pixels4,pixels6]"
@@ -340,7 +298,7 @@ class ChainEvalFranka:
             **os.environ,
             "HAND": hand,
             "DES_OBJECT": obj,
-            "DES_OBJECTS": obj,  # 支持 "orange bottle, blue basket" / "A; B" / '["A","B"]'
+            "DES_OBJECTS": obj,  #  "orange bottle, blue basket" / "A; B" / '["A","B"]'
         }
         print("[→] Launching eval:\n  " + " ".join(cmd))
         self.eval_proc = subprocess.Popen(cmd, env=env)
@@ -380,52 +338,21 @@ class ChainEvalFranka:
                     print(f"[!] Unknown task '{task}'. Available: {', '.join(TASK_MODELS)}")
                     continue
 
-                # model, hand, use_obj_pt, reset_flag = cfg["model"], cfg["hand"], cfg["use_object_point"], cfg["reset_flag"]  # type: ignore[index]
+                model, hand, use_obj_pt, reset_flag = cfg["model"], cfg["hand"], cfg["use_object_point"], cfg["reset_flag"]  # type: ignore[index]
 
-                # if not Path(model).exists():
-                #     print(f"[!] Checkpoint missing: {model}")
-                #     continue
+                if not Path(model).exists():
+                    print(f"[!] Checkpoint missing: {model}")
+                    continue
 
-                # # launch / switch policy
-                # self._stop_eval()
-                # self._start_eval(task, model, hand, des_obj, use_obj_pt, reset_flag, use_pin_pt=cfg.get("use_pin_point", False))
-
-                # ── SPECIAL CASE: close_oven_left_robot → run Franka-Teach replay ──
-                if task == "close_oven_left_robot" or task == "put_cup_into_basket_left_robot" or task == "pick_plate_from_rack_left_robot":
-                    self._stop_eval()
-                    time.sleep(20)
-                    self._start_policy(task)
-                else:
-                    model, hand, use_obj_pt, reset_flag = (
-                        cfg["model"],
-                        cfg["hand"],
-                        cfg["use_object_point"],
-                        cfg["reset_flag"],
-                    )  # type: ignore[index]
-                    if not Path(model).exists():
-                        print(f"[!] Checkpoint missing: {model}")
-                        continue
-                    # launch / switch policy
-                    self._stop_eval()
-                    self._start_eval(
-                        task,
-                        model,
-                        hand,
-                        des_obj,
-                        use_obj_pt,
-                        reset_flag,
-                        use_pin_pt=cfg.get("use_pin_point", False),
-                    )
+                # launch / switch policy
+                self._stop_eval()
+                self._start_eval(task, model, hand, des_obj, use_obj_pt, reset_flag, use_pin_pt=cfg.get("use_pin_point", False))
 
                 self.current_task = task
                 self.current_des_obj = des_obj
                 self.judge_rounds = 0
                 self.task_complete = False
-                # print(f"[→] >>> New task: {task}, object: {des_obj} <<<")
-                if task == "close_oven_left_robot":
-                    print(f"[→] >>> New task (REPLAY): {task} <<<")
-                else:
-                    print(f"[→] >>> New task: {task}, object: {des_obj} <<<")
+                print(f"[→] >>> New task: {task}, object: {des_obj} <<<")
 
             # ── Judge loop ──
             tick = 0
@@ -443,7 +370,7 @@ class ChainEvalFranka:
                     print("[✓] Judge reply:", verdict)
                     if "judge: task completed" in verdict.get("result", "").lower():
                         print(f"[✓] Task '{self.current_task}' completed.")
-                        time.sleep(8)  # 等待 8 秒，确保 eval.py 完成任务
+                        time.sleep(8)
                         self.task_complete = True
                         self._stop_eval()
                         # ── NEW: if we just opened the fridge with the right arm, reset it now ──
@@ -465,7 +392,6 @@ class ChainEvalFranka:
                         if self.judge_rounds >= self.max_judge_rounds:
                             print(f"[!] Max judge rounds reached ({self.max_judge_rounds}). Forcing completion.")
                             self._stop_eval()
-                            # 与真实完成时保持一致的后置动作（含右手机器人的重置）
                             if self.current_task in ("open_fridge_door_right_robot", "open_the_fridge_door_right_robot"):
                                 try:
                                     print("[→] Auto-resetting right robot after forced completion…")
